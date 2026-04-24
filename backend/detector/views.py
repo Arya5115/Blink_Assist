@@ -9,7 +9,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .blink_detector import BlinkDetector
 
-_detector = BlinkDetector()
+_detector = None
 
 
 @api_view(["GET"])
@@ -39,4 +39,16 @@ def detect_frame(request):
     except Exception as e:
         return Response({"error": str(e)}, status=400)
 
-    return Response(_detector.process(bgr))
+    global _detector
+    if _detector is None:
+        try:
+            _detector = BlinkDetector()
+        except Exception as e:
+            import traceback
+            return Response({"error": "init failed", "trace": traceback.format_exc()}, status=500)
+
+    try:
+        return Response(_detector.process(bgr))
+    except Exception as e:
+        import traceback
+        return Response({"error": "process failed", "trace": traceback.format_exc()}, status=500)
