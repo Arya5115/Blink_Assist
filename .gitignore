@@ -1,0 +1,25 @@
+# General
+.env
+.DS_Store
+
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+db.sqlite3
+.venv/
+venv/
+env/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
