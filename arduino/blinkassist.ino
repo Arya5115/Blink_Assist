@@ -5,7 +5,7 @@
  *   'S' -> SOS pattern (long/long/long)
  *   '0' -> silence
  */
-const int BUZZER = 8;
+const int BUZZER = 8
 void setup() { pinMode(BUZZER, OUTPUT); Serial.begin(115200); }
 void loop() {
   if (!Serial.available()) return;
