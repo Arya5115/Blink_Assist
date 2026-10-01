@@ -221,7 +221,6 @@ class SafetyViewSet(viewsets.ViewSet):
         check = WellnessCheckLog.objects.create(patient=patient)
         event = create_event(patient, Event.Type.WELLNESS, "Wellness check requested", {"check_id": check.id}, Event.Status.PENDING)
         PatientStatusLog.objects.create(patient=patient, state=PatientStatusLog.State.WELLNESS_CHECK_PENDING, reason="Waiting for patient response")
-        notify_caregivers(event)
         broadcast(patient.id, "wellness.requested", {"check_id": check.id})
         return Response(WellnessSerializer(check).data, status=201)
 

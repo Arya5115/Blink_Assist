@@ -59,7 +59,7 @@ class BlinkDetector:
         self.last_blink_end = 0.0
         self.unprocessed_blinks = 0
         self.blink_ends = []
-        self.counts = {"single": 0, "double": 0, "sustained": 0, "total": 0}
+        self.counts = {"single": 0, "double": 0, "triple": 0, "sustained": 0, "total": 0}
 
     def process(self, bgr):
         h, w = bgr.shape[:2]
@@ -108,6 +108,10 @@ class BlinkDetector:
                 self.counts["sustained"] += 1
                 self.counts["total"] += 1
                 out["event"] = {"type": "sustained", "duration_ms": int((now - self.last_blink_end) * 1000.0)}
+            elif blinks == 3:
+                self.counts["triple"] += 1
+                self.counts["total"] += 1
+                out["event"] = {"type": "triple", "duration_ms": int((now - self.last_blink_end) * 1000.0)}
             elif blinks >= 2:
                 self.counts["double"] += 1
                 self.counts["total"] += 1
