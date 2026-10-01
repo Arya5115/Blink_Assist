@@ -3,6 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import Caregiver, EmergencyLog, Event, NotificationLog, Patient, WellnessCheckLog
+from .permissions import role_for
 
 
 class SafetyAndExportTests(TestCase):
@@ -68,3 +69,17 @@ class SafetyAndExportTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(NotificationLog.objects.filter(event__patient=self.patient).exists())
+
+    def test_role_for_uses_profile_when_group_membership_is_missing(self):
+        self.user.groups.clear()
+
+        self.assertEqual(role_for(self.user), "patient")
+
+    def test_wellness_response_accepts_falsey_string_values(self):
+        WellnessCheckLog.objects.create(patient=self.patient)
+
+        response = self.client.post("/api/safety/wellness_response/", {"successful": "false"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        check = WellnessCheckLog.objects.get(patient=self.patient)
+        self.assertFalse(check.successful)

@@ -14,6 +14,10 @@ from .permissions import ADMIN, CAREGIVER, PATIENT, require_patient_controller, 
 from .serial_gateway import ArduinoGateway
 
 
+def _normalized_role(value):
+    return str(value or "").strip().lower()
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register_account(request):
@@ -22,7 +26,7 @@ def register_account(request):
     missing = [field for field in required if not request.data.get(field)]
     if missing:
         return Response({"detail": f"Missing: {', '.join(missing)}"}, status=status.HTTP_400_BAD_REQUEST)
-    role = request.data["role"]
+    role = _normalized_role(request.data["role"])
     if role not in (PATIENT, CAREGIVER):
         return Response({"detail": "Administrator accounts must be provisioned by an administrator."}, status=status.HTTP_403_FORBIDDEN)
     if len(request.data["password"]) < 10:
@@ -231,8 +235,11 @@ class SafetyViewSet(viewsets.ViewSet):
         check = WellnessCheckLog.objects.filter(patient=patient, responded_at__isnull=True).first()
         if not check:
             return Response({"detail": "No wellness check is awaiting a response."}, status=status.HTTP_404_NOT_FOUND)
+        successful_value = request.data.get("successful", True)
+        if isinstance(successful_value, str):
+            successful_value = successful_value.strip().lower() not in {"false", "0", "no", "n", "cancel", "off"}
         check.responded_at = timezone.now()
-        check.successful = bool(request.data.get("successful", True))
+        check.successful = bool(successful_value)
         check.save(update_fields=["responded_at", "successful"])
         Event.objects.filter(patient=patient, event_type=Event.Type.WELLNESS, metadata__check_id=check.id, status=Event.Status.PENDING).update(status=Event.Status.SUCCESS if check.successful else Event.Status.CANCELLED)
         next_state = PatientStatusLog.State.ACTIVE if check.successful else PatientStatusLog.State.UNRESPONSIVE
@@ -356,7 +363,7 @@ class AccountManagementViewSet(viewsets.ViewSet):
         missing = [field for field in required if not request.data.get(field)]
         if missing:
             return Response({"detail": f"Missing: {', '.join(missing)}"}, status=400)
-        role = request.data["role"]
+        role = _normalized_role(request.data["role"])
         if role not in ("patient", "caregiver"):
             return Response({"detail": "Role must be patient or caregiver."}, status=400)
         if User.objects.filter(username=request.data["username"]).exists():

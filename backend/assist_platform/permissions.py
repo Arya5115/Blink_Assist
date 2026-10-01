@@ -9,9 +9,9 @@ UNASSIGNED = "unassigned"
 def role_for(user):
     if user.is_superuser or user.is_staff:
         return ADMIN
-    if user.groups.filter(name="Patient").exists():
+    if hasattr(user, "patient_profile") or user.groups.filter(name__iexact="Patient").exists():
         return PATIENT
-    if user.groups.filter(name="Caregiver").exists():
+    if hasattr(user, "caregiver_profile") or user.groups.filter(name__iexact="Caregiver").exists():
         return CAREGIVER
     return UNASSIGNED
 
