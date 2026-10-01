@@ -1,15 +1,18 @@
+import os
+
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import CalibrationProfile, Caregiver, CommunicationLog, DatasetFrame, DatasetSession, EmergencyLog, Event, NotificationLog, Patient, PatientStatusLog, WellnessCheckLog
+from .models import CalibrationProfile, Caregiver, CommunicationLog, DatasetFrame, DatasetSession, EmergencyLog, Event, NotificationLog, Patient, PatientStatusLog, SafetyMonitorState, WellnessCheckLog
 from .serializers import CalibrationSerializer, CaregiverSerializer, CommunicationLogSerializer, DatasetFrameSerializer, DatasetSessionSerializer, EventSerializer, PatientSerializer, StatusSerializer, WellnessSerializer
-from .services import broadcast, create_event, notify_caregivers
+from .services import broadcast, create_event, create_telegram_link, notify_caregivers
 from .permissions import ADMIN, CAREGIVER, PATIENT, require_patient_controller, role_for
 from .serial_gateway import ArduinoGateway
 
@@ -44,20 +47,37 @@ def register_account(request):
     return Response({"role": role, "access": str(refresh.access_token), "refresh": str(refresh)}, status=status.HTTP_201_CREATED)
 
 
+@api_view(["GET", "POST"])
+def caregiver_telegram(request):
+    """Return own Telegram link status or create a short-lived bot deep link."""
+    if role_for(request.user) != CAREGIVER or not hasattr(request.user, "caregiver_profile"):
+        raise PermissionDenied("Only caregivers can connect Telegram notifications.")
+    caregiver = request.user.caregiver_profile
+    bot_username = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+    configured = bool(bot_username and os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
+    if request.method == "GET":
+        return Response({"connected": caregiver.telegram_chat_id is not None, "bot_username": bot_username, "configured": configured})
+    try:
+        link = create_telegram_link(caregiver)
+    except RuntimeError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"url": link}, status=status.HTTP_201_CREATED)
+
+
 def patient_for(request):
     patient_id = request.data.get("patient_id") or request.query_params.get("patient_id")
     role = role_for(request.user)
     if role == PATIENT and hasattr(request.user, "patient_profile"):
         if patient_id and int(patient_id) != request.user.patient_profile.id:
-            raise permissions.PermissionDenied("Patients may only access their own profile.")
+            raise PermissionDenied("Patients may only access their own profile.")
         return request.user.patient_profile
     if role == CAREGIVER and hasattr(request.user, "caregiver_profile"):
         if not patient_id:
-            raise permissions.PermissionDenied("Choose an assigned patient.")
+            raise PermissionDenied("Choose an assigned patient.")
         return request.user.caregiver_profile.patients.get(pk=patient_id)
     if role == ADMIN and patient_id:
         return Patient.objects.get(pk=patient_id)
-    raise permissions.PermissionDenied("A patient profile is required.")
+    raise PermissionDenied("A patient profile is required.")
 
 
 class PatientViewSet(viewsets.ReadOnlyModelViewSet):
@@ -117,7 +137,7 @@ class EventViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             return Event.objects.filter(patient=patient_for(self.request))
-        except permissions.PermissionDenied:
+        except PermissionDenied:
             return Event.objects.none()
 
     def perform_create(self, serializer):
@@ -155,7 +175,7 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
             if patient_id:
                 logs = logs.filter(event__patient_id=patient_id)
         else:
-            raise permissions.PermissionDenied("Only caregivers and administrators may view notification delivery.")
+            raise PermissionDenied("Only caregivers and administrators may view notification delivery.")
         return Response([{
             "id": log.id, "created_at": log.created_at, "patient": str(log.event.patient),
             "event": log.event.action, "channel": log.channel, "status": log.status,
@@ -168,7 +188,7 @@ class CommunicationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             return CommunicationLog.objects.filter(patient=patient_for(self.request))
-        except permissions.PermissionDenied:
+        except PermissionDenied:
             return CommunicationLog.objects.none()
     def perform_create(self, serializer):
         require_patient_controller(self.request)
@@ -195,7 +215,7 @@ class CalibrationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             return CalibrationProfile.objects.filter(patient=patient_for(self.request))
-        except permissions.PermissionDenied:
+        except PermissionDenied:
             return CalibrationProfile.objects.none()
     def perform_create(self, serializer):
         require_patient_controller(self.request)
@@ -214,6 +234,59 @@ class SafetyViewSet(viewsets.ViewSet):
         record = PatientStatusLog.objects.create(patient=patient, state=request.data["state"], reason=request.data.get("reason", ""))
         create_event(patient, Event.Type.ACTIVITY, record.state, {"reason": record.reason})
         return Response(StatusSerializer(record).data, status=201)
+
+    @action(detail=False, methods=["get", "post"])
+    def sleep_mode(self, request):
+        """Record automatic sleep/wake and camera-loss transitions for this patient."""
+        require_patient_controller(request)
+        patient = patient_for(request)
+        monitor, _ = SafetyMonitorState.objects.get_or_create(patient=patient)
+
+        def state_payload():
+            return {"sleep_mode_on": monitor.sleep_mode_on, "camera_loss_alerted": monitor.camera_loss_alerted}
+
+        if request.method == "GET":
+            return Response(state_payload())
+
+        action_name = str(request.data.get("action", "")).strip().lower()
+        if action_name not in {"sleep", "wake", "camera_lost", "camera_recovered"}:
+            return Response({"detail": "Unsupported safety monitor action."}, status=status.HTTP_400_BAD_REQUEST)
+
+        closed_duration = None
+        if action_name == "sleep":
+            try:
+                closed_duration = float(request.data.get("closed_duration_seconds", 0))
+            except (TypeError, ValueError):
+                closed_duration = 0
+            if not __import__("math").isfinite(closed_duration) or closed_duration <= 40:
+                return Response({"detail": "Sleep Mode requires more than 40 continuous seconds of observed eye closure."}, status=status.HTTP_400_BAD_REQUEST)
+
+        notification_event = None
+        with transaction.atomic():
+            monitor = SafetyMonitorState.objects.select_for_update().get(pk=monitor.pk)
+            if action_name == "sleep" and not monitor.sleep_mode_on:
+                monitor.sleep_mode_on = True
+                monitor.save(update_fields=["sleep_mode_on"])
+                notification_event = create_event(
+                    patient, Event.Type.NOTIFICATION, "Patient asleep",
+                    {"source": "automatic_sleep_mode", "closed_duration_seconds": closed_duration}, Event.Status.PENDING,
+                )
+            elif action_name == "wake" and monitor.sleep_mode_on:
+                monitor.sleep_mode_on = False
+                monitor.save(update_fields=["sleep_mode_on"])
+                notification_event = create_event(patient, Event.Type.NOTIFICATION, "Patient awake", {"source": "automatic_sleep_mode"}, Event.Status.PENDING)
+            elif action_name == "camera_lost" and not monitor.camera_loss_alerted:
+                monitor.camera_loss_alerted = True
+                monitor.save(update_fields=["camera_loss_alerted"])
+                notification_event = create_event(patient, Event.Type.NOTIFICATION, "Camera/face unavailable", {"source": "camera_monitor"}, Event.Status.PENDING)
+            elif action_name == "camera_recovered" and monitor.camera_loss_alerted:
+                monitor.camera_loss_alerted = False
+                monitor.save(update_fields=["camera_loss_alerted"])
+                create_event(patient, Event.Type.ACTIVITY, "Camera/face recovered", {"source": "camera_monitor"})
+
+        if notification_event:
+            notify_caregivers(notification_event)
+        return Response(state_payload())
 
     @action(detail=False, methods=["post"])
     def wellness(self, request):
@@ -260,7 +333,7 @@ class SafetyViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["post"])
     def acknowledge(self, request):
         if role_for(request.user) not in (CAREGIVER, ADMIN):
-            raise permissions.PermissionDenied("Only a caregiver or administrator can acknowledge an emergency.")
+            raise PermissionDenied("Only a caregiver or administrator can acknowledge an emergency.")
         patient = patient_for(request)
         emergency = EmergencyLog.objects.filter(event__patient=patient, acknowledged_at__isnull=True, cancelled_at__isnull=True).first()
         if not emergency:
@@ -316,7 +389,7 @@ class DatasetSessionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             return DatasetSession.objects.filter(patient=patient_for(self.request))
-        except permissions.PermissionDenied:
+        except PermissionDenied:
             return DatasetSession.objects.none()
     def perform_create(self, serializer):
         require_patient_controller(self.request)

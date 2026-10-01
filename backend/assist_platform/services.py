@@ -1,14 +1,16 @@
 """Notification delivery and audit boundary."""
-import base64
+import hashlib
 import json
 import os
+import secrets
+from datetime import timedelta
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.db import IntegrityError, transaction
 from django.utils import timezone
-from .models import Event, NotificationLog
+from .models import Caregiver, Event, NotificationLog, TelegramLinkToken
 
 
 def broadcast(patient_id, event_name, payload):
@@ -23,69 +25,131 @@ def create_event(patient, event_type, action, metadata=None, status=Event.Status
 
 
 def notify_caregivers(event):
-    """Deliver SMS through Twilio when configured; always retain an audit trail."""
+    """Send explicit caregiver alerts to linked Telegram chats and audit delivery."""
     for caregiver in event.patient.caregivers.all():
-        _send_twilio(event, caregiver, "SMS", caregiver.phone_number)
-        # WhatsApp is fully optional; do not create a misleading failure row unless
-        # the sender has deliberately configured it.
-        if os.environ.get("TWILIO_WHATSAPP_FROM"):
-            _send_twilio(event, caregiver, "WHATSAPP", caregiver.whatsapp_number, whatsapp=True)
+        _send_telegram(event, caregiver)
         NotificationLog.objects.create(
             event=event, caregiver=caregiver, channel="PUSH", status="DELIVERED",
             attempts=1, delivered_at=timezone.now(), provider_id="websocket",
         )
-    external = NotificationLog.objects.filter(event=event).exclude(channel="PUSH")
-    if external.filter(status="SENT").exists():
-        action, status = "Caregiver SMS sent", Event.Status.SUCCESS
-    elif external.filter(status="FAILED").exists():
-        action, status = "Caregiver SMS delivery failed", Event.Status.FAILED
-    elif external.exists():
-        action, status = "Caregiver SMS not configured", Event.Status.FAILED
+    telegram_logs = NotificationLog.objects.filter(event=event, channel=NotificationLog.Channel.TELEGRAM)
+    if telegram_logs.filter(status="SENT").exists():
+        action, status = "Caregiver Telegram alert sent", Event.Status.SUCCESS
+    elif telegram_logs.filter(status="FAILED").exists():
+        action, status = "Caregiver Telegram delivery failed", Event.Status.FAILED
+    elif telegram_logs.exists():
+        action, status = "Caregiver Telegram not configured", Event.Status.FAILED
     else:
-        action, status = "No caregiver assigned for notification", Event.Status.FAILED
+        action, status = "No linked caregiver for Telegram alert", Event.Status.FAILED
     audit = Event.objects.create(patient=event.patient, event_type=Event.Type.NOTIFICATION, action=action, status=status, metadata={"source_event_id": event.id})
     broadcast(event.patient_id, "notification.audit", {"id": audit.id, "action": action, "status": status})
     broadcast(event.patient_id, "notification.delivered", {"event_id": event.id, "channel": "PUSH"})
 
 
-def _send_twilio(event, caregiver, channel, recipient, whatsapp=False):
-    """Use Twilio's REST API without pretending a queue item was delivered.
+def create_telegram_link(caregiver):
+    """Create a short-lived, single-use secret and return its Telegram deep link."""
+    bot_username = os.environ.get("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+    if not bot_username or not os.environ.get("TELEGRAM_BOT_TOKEN", "").strip():
+        raise RuntimeError("Telegram bot token and username must be configured.")
+    TelegramLinkToken.objects.filter(caregiver=caregiver, used_at__isnull=True).delete()
+    token = secrets.token_urlsafe(24)
+    TelegramLinkToken.objects.create(
+        caregiver=caregiver,
+        token_hash=hashlib.sha256(token.encode()).hexdigest(),
+        expires_at=timezone.now() + timedelta(minutes=10),
+    )
+    return f"https://t.me/{bot_username}?start={token}"
 
-    Required environment: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and
-    TWILIO_FROM_NUMBER. Some Twilio trial/regulatory routes require an approved
-    Content Template; set TWILIO_CONTENT_SID when the console provides one.
-    """
-    log = NotificationLog.objects.create(event=event, caregiver=caregiver, channel=channel, attempts=1)
-    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    from_number = os.environ.get("TWILIO_WHATSAPP_FROM" if whatsapp else "TWILIO_FROM_NUMBER", "")
-    if not recipient:
+
+def link_telegram_chat(token, chat_id):
+    """Consume a valid Telegram deep-link token and bind its private chat once."""
+    if not token or not isinstance(chat_id, int) or isinstance(chat_id, bool):
+        return False
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    try:
+        with transaction.atomic():
+            link = TelegramLinkToken.objects.select_for_update().select_related("caregiver").get(token_hash=token_hash)
+            if link.used_at or link.expires_at <= timezone.now():
+                return False
+            if Caregiver.objects.exclude(pk=link.caregiver_id).filter(telegram_chat_id=chat_id).exists():
+                return False
+            link.caregiver.telegram_chat_id = chat_id
+            link.caregiver.save(update_fields=["telegram_chat_id"])
+            link.used_at = timezone.now()
+            link.save(update_fields=["used_at"])
+            return True
+    except (TelegramLinkToken.DoesNotExist, IntegrityError):
+        return False
+
+
+def _send_telegram(event, caregiver):
+    log = NotificationLog.objects.create(
+        event=event, caregiver=caregiver, channel=NotificationLog.Channel.TELEGRAM, attempts=1,
+    )
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not caregiver.telegram_chat_id:
         log.status = "NO_RECIPIENT"
-    elif not all((account_sid, auth_token, from_number)):
+    elif not bot_token:
         log.status = "NOT_CONFIGURED"
     else:
-        prefix = "whatsapp:" if whatsapp else ""
+        payload = json.dumps({
+            "chat_id": caregiver.telegram_chat_id,
+            "text": f"BlinkAssist alert for {event.patient}: {event.action}",
+        }).encode()
+        request = Request(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
-            body = f"BlinkAssist alert for {event.patient}: {event.action}"
-            fields = {"To": f"{prefix}{recipient}", "From": f"{prefix}{from_number}"}
-            content_sid = os.environ.get("TWILIO_CONTENT_SID", "")
-            if content_sid:
-                fields.update({"ContentSid": content_sid, "ContentVariables": json.dumps({"1": str(event.patient), "2": event.action})})
-            else:
-                fields["Body"] = body
-            payload = urlencode(fields).encode()
-            credentials = base64.b64encode(f"{account_sid}:{auth_token}".encode()).decode()
-            request = Request(
-                f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
-                data=payload, headers={"Authorization": f"Basic {credentials}", "Content-Type": "application/x-www-form-urlencoded"}, method="POST",
-            )
             with urlopen(request, timeout=10) as response:
-                provider_id = json.loads(response.read().decode()).get("sid", "")
-            log.status, log.provider_id, log.delivered_at = "SENT", provider_id, timezone.now()
+                result = json.loads(response.read().decode())
+            if result.get("ok"):
+                message = result.get("result", {})
+                log.status = "SENT"
+                log.provider_id = str(message.get("message_id", ""))[:128]
+                log.delivered_at = timezone.now()
+            else:
+                log.status = "FAILED"
+                log.provider_id = str(result.get("description", "Telegram rejected the message."))[:128]
         except HTTPError as exc:
-            # Twilio returns the useful explanation in its response body.
-            detail = exc.read().decode(errors="replace")[:110]
-            log.status, log.provider_id = "FAILED", f"HTTP {exc.code}: {detail}"[:128]
+            log.status = "FAILED"
+            log.provider_id = f"HTTP {exc.code}: {exc.read().decode(errors='replace')[:100]}"[:128]
         except (URLError, TimeoutError, ValueError) as exc:
-            log.status, log.provider_id = "FAILED", str(exc)[:128]
+            log.status = "FAILED"
+            log.provider_id = f"{type(exc).__name__}: Telegram request failed"[:128]
     log.save(update_fields=["status", "provider_id", "delivered_at"])
+
+
+def handle_telegram_update(update):
+    """Process a bot /start deep-link update; return a new long-poll offset."""
+    message = update.get("message") or {}
+    chat = message.get("chat") or {}
+    text = str(message.get("text", ""))
+    parts = text.split(maxsplit=1)
+    if chat.get("type") == "private" and len(parts) == 2 and parts[0].split("@", 1)[0] == "/start":
+        linked = link_telegram_chat(parts[1].strip(), chat.get("id"))
+        answer = "Telegram is connected to your BlinkAssist caregiver account." if linked else "That connection link is invalid or expired. Please create a new link in BlinkAssist."
+        send_telegram_message(chat["id"], answer)
+    return int(update.get("update_id", 0)) + 1
+
+
+def send_telegram_message(chat_id, text):
+    """Send a Telegram message and raise on provider/API failures."""
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not bot_token:
+        raise RuntimeError("Telegram bot token is not configured.")
+    payload = json.dumps({"chat_id": chat_id, "text": text}).encode()
+    request = Request(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=10) as response:
+        result = json.loads(response.read().decode())
+    if not result.get("ok"):
+        raise RuntimeError(result.get("description", "Telegram rejected the message."))
+
+

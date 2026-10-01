@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { createRoot, Root } from "react-dom/client";
+import SleepModePanel from "./SleepModePanel";
 
 type View = "dashboard" | "communication" | "appliances" | "safety" | "history" | "calibration" | "metrics" | "settings";
 type State = "ACTIVE" | "IDLE" | "SLEEP_CANDIDATE" | "FACE_LOST" | "WELLNESS_CHECK_PENDING" | "UNRESPONSIVE" | "EMERGENCY";
@@ -43,13 +45,43 @@ const request = async (path: string, token: string, init: RequestInit = {}) => {
 const display = (value: string) => value.replace(/_/g, " ");
 
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem("blinkassist_token") || ""); const [profile, setProfile] = useState<Profile | null>(null); const [patient, setPatient] = useState<Patient | null>(null); const [error, setError] = useState(""); const [dark, setDark] = useState(() => localStorage.getItem("blinkassist_theme") !== "light");
-  useEffect(() => { document.documentElement.dataset.theme = dark ? "dark" : "light"; localStorage.setItem("blinkassist_theme", dark ? "dark" : "light"); }, [dark]);
-  const signOut = () => { localStorage.removeItem("blinkassist_token"); localStorage.removeItem("blinkassist_refresh"); setToken(""); setProfile(null); };
-  useEffect(() => { const expire = () => { setError("Your session has expired. Please sign in again."); signOut(); }; window.addEventListener("blinkassist:session-expired", expire); return () => window.removeEventListener("blinkassist:session-expired", expire); });
-  useEffect(() => { if (!token) return; request("/patients/me/", token).then(async r => { if (!r.ok) throw Error("Session expired. Please sign in again."); return r.json(); }).then((p: Profile) => { setProfile(p); setPatient(p.patient || p.patients?.[0] || null); }).catch(e => { setError(e.message); signOut(); }); }, [token]);
+  const [token, setToken] = useState(() => localStorage.getItem("blinkassist_token") || "");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [error, setError] = useState("");
+  const [dark, setDark] = useState(() => localStorage.getItem("blinkassist_theme") !== "light");
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    localStorage.setItem("blinkassist_theme", dark ? "dark" : "light");
+  }, [dark]);
+  const signOut = () => {
+    localStorage.removeItem("blinkassist_token");
+    localStorage.removeItem("blinkassist_refresh");
+    setToken("");
+    setProfile(null);
+  };
+  useEffect(() => {
+    const expire = () => { setError("Your session has expired. Please sign in again."); signOut(); };
+    window.addEventListener("blinkassist:session-expired", expire);
+    return () => window.removeEventListener("blinkassist:session-expired", expire);
+  });
+  useEffect(() => {
+    if (!token) return;
+    request("/patients/me/", token).then(async response => {
+      if (!response.ok) throw Error("Session expired. Please sign in again.");
+      return response.json();
+    }).then((nextProfile: Profile) => {
+      setProfile(nextProfile);
+      setPatient(nextProfile.patient || nextProfile.patients?.[0] || null);
+    }).catch(reason => { setError(reason.message); signOut(); });
+  }, [token]);
   const themeSwitch = <button className="theme-switch" aria-label="Test voice feedback and toggle day and night mode" onClick={() => { speak("Voice feedback is enabled."); setDark(value => !value); }}>{dark ? "🔊 Test voice · ☀ Day" : "🔊 Test voice · ◐ Night"}</button>;
-  useEffect(() => { if (!token) return; const renew = async () => { const access = await refreshAccessToken(); if (access) setToken(access); else signOut(); }; const timer = window.setInterval(() => void renew(), 240000); return () => window.clearInterval(timer); }, [token]);
+  useEffect(() => {
+    if (!token) return;
+    const renew = async () => { const access = await refreshAccessToken(); if (access) setToken(access); else signOut(); };
+    const timer = window.setInterval(() => void renew(), 240000);
+    return () => window.clearInterval(timer);
+  }, [token]);
   if (!token || !profile) return <><Login error={error} onLogin={(access, refresh) => { localStorage.setItem("blinkassist_token", access); localStorage.setItem("blinkassist_refresh", refresh); setToken(access); }} />{themeSwitch}</>;
   if (profile.role === "admin") return <><AdminPanel token={token} signOut={signOut} /><AdminOperations token={token} />{themeSwitch}</>;
   if (!patient) return <><main className="assist-shell"><h1>No patient assigned</h1><p className="hint">An administrator must assign a patient to this caregiver.</p><button onClick={signOut}>Sign out</button></main>{themeSwitch}</>;
@@ -58,19 +90,46 @@ export default function App() {
 
 function Login({ onLogin, error }: { onLogin: (access: string, refresh: string) => void; error: string }) { const [mode, setMode] = useState<"login" | "register">("login"), [role, setRole] = useState<"patient" | "caregiver">("patient"), [username, setUsername] = useState(""), [password, setPassword] = useState(""), [message, setMessage] = useState(error); async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setMessage(""); const form = new FormData(e.currentTarget); const endpoint = mode === "login" ? "/auth/token/" : "/auth/register/"; const payload = mode === "login" ? { username, password } : { ...Object.fromEntries(form.entries()), username, password, role }; const r = await fetch(`${API}${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const data = await r.json(); if (!r.ok) return setMessage(data.detail || "We could not complete that request."); onLogin(data.access, data.refresh); } return <main className="assist-shell login-shell"><section className="content-card login-card"><p className="eyebrow">BLINKASSIST / SECURE ACCESS</p><h1>{mode === "login" ? "Welcome back." : "Create your care profile."}</h1><p className="hint">{mode === "login" ? "Sign in with your existing patient, caregiver or administrator account." : "Choose a non-privileged role. Administrator access is provisioned by an existing administrator."}</p><div className="auth-tabs"><button className={mode === "login" ? "active" : ""} type="button" onClick={() => { setMode("login"); setMessage(""); }}>Sign in</button><button className={mode === "register" ? "active" : ""} type="button" onClick={() => { setMode("register"); setMessage(""); }}>New user</button></div><form onSubmit={submit}>{mode === "register" && <><label>Choose role<select value={role} onChange={e => setRole(e.target.value as "patient" | "caregiver")}><option value="patient">Patient</option><option value="caregiver">Caregiver</option></select></label><p className="role-note">Administrator accounts are created by an administrator after verification.</p><label>Full name<input name="name" required /></label><label>Email<input name="email" type="email" autoComplete="email" /></label>{role === "patient" ? <><label>Room number<input name="room_number" /></label><label>Age<input name="age" type="number" min="0" /></label></> : <><label>Mobile number<input name="phone_number" /></label><label>WhatsApp number<input name="whatsapp_number" /></label></>}</>}<label>Username<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} /></label><label>Password<input required type="password" minLength={mode === "register" ? 10 : undefined} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={e => setPassword(e.target.value)} /></label>{message && <p className="error-text" role="alert">{message}</p>}<button>{mode === "login" ? "Sign in securely" : `Create ${role} account`}</button></form><p className="auth-footnote">{mode === "login" ? "New here? Choose New user to register." : "Already registered? Choose Sign in."}</p></section></main>; }
 
-function AdminPanel({ token, signOut }: { token: string; signOut: () => void }) { const [role, setRole] = useState<"patient" | "caregiver">("patient"), [message, setMessage] = useState(""), [patients, setPatients] = useState<Patient[]>([]); useEffect(() => { request("/accounts/", token).then(r => r.json()).then(data => setPatients(data.patients || [])).catch(() => setMessage("Could not load patients.")); }, [token]); async function create(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const form = new FormData(e.currentTarget); const payload = Object.fromEntries(form.entries()); const patientIds = form.getAll("patient_ids").map(Number); const response = await request("/accounts/", token, { method: "POST", body: JSON.stringify({ ...payload, role, patient_ids: patientIds }) }); const data = await response.json(); if (!response.ok) return setMessage(data.detail || "Could not create user."); setMessage(`${display(role)} created successfully.`); e.currentTarget.reset(); if (role === "patient") setPatients(current => [...current, data.patient]); } return <main className="assist-shell"><header className="assist-header"><div><p className="eyebrow">BLINKASSIST / ADMINISTRATION</p><h1>Identity & care access</h1><p className="hint">Provision patient and caregiver profiles with server-enforced roles.</p></div><button onClick={signOut}>Sign out</button></header><section className="content-card admin-form"><form onSubmit={create}><label>Role<select value={role} onChange={e => setRole(e.target.value as "patient" | "caregiver")}><option value="patient">Patient — controls and camera</option><option value="caregiver">Caregiver — assigned patient records</option></select></label><label>Full name<input name="name" required /></label><label>Username<input name="username" required /></label><label>Password<input name="password" type="password" minLength={10} required /></label><label>Email<input name="email" type="email" /></label>{role === "patient" ? <><label>Age<input name="age" type="number" min="0" /></label><label>Room number<input name="room_number" /></label></> : <><label>Mobile number<input name="phone_number" placeholder="+919876543210" /></label><label>WhatsApp number<input name="whatsapp_number" placeholder="+919876543210" /></label><fieldset><legend>Assigned patients</legend>{patients.length ? patients.map(p => <label key={p.id}><input name="patient_ids" value={p.id} type="checkbox" /> {p.name} · Room {p.room_number}</label>) : <p className="hint">Create a patient account first.</p>}</fieldset></>}<button>Create {role}</button>{message && <p className="hint">{message}</p>}</form></section></main>; }
+function AdminPanel({ token, signOut }: { token: string; signOut: () => void }) { const [role, setRole] = useState<"patient" | "caregiver">("patient"), [message, setMessage] = useState(""), [patients, setPatients] = useState<Patient[]>([]); useEffect(() => { request("/accounts/", token).then(r => r.json()).then(data => setPatients(data.patients || [])).catch(() => setMessage("Could not load patients.")); }, [token]); async function create(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const form = new FormData(e.currentTarget); const payload = Object.fromEntries(form.entries()); const patientIds = form.getAll("patient_ids").map(Number); const response = await request("/accounts/", token, { method: "POST", body: JSON.stringify({ ...payload, role, patient_ids: patientIds }) });
+  const data = await response.json();
+  if (!response.ok) return setMessage(data.detail || "Could not create user.");
+  setMessage(`${display(role)} created successfully.`);
+  e.currentTarget.reset();
+  if (role === "patient") setPatients(current => [...current, data.patient]);
+} return <main className="assist-shell"><header className="assist-header"><div><p className="eyebrow">BLINKASSIST / ADMINISTRATION</p><h1>Identity & care access</h1><p className="hint">Provision patient and caregiver profiles with server-enforced roles.</p></div><button onClick={signOut}>Sign out</button></header><section className="content-card admin-form"><form onSubmit={create}><label>Role<select value={role} onChange={e => setRole(e.target.value as "patient" | "caregiver")}><option value="patient">Patient — controls and camera</option><option value="caregiver">Caregiver — assigned patient records</option></select></label><label>Full name<input name="name" required /></label><label>Username<input name="username" required /></label><label>Password<input name="password" type="password" minLength={10} required /></label><label>Email<input name="email" type="email" /></label>{role === "patient" ? <><label>Age<input name="age" type="number" min="0" /></label><label>Room number<input name="room_number" /></label></> : <><label>Mobile number<input name="phone_number" placeholder="+919876543210" /></label><label>WhatsApp number<input name="whatsapp_number" placeholder="+919876543210" /></label><fieldset><legend>Assigned patients</legend>{patients.length ? patients.map(p => <label key={p.id}><input name="patient_ids" value={p.id} type="checkbox" /> {p.name} · Room {p.room_number}</label>) : <p className="hint">Create a patient account first.</p>}</fieldset></>}<button>Create {role}</button>{message && <p className="hint">{message}</p>}</form></section></main>; }
 
-function AdminOperations({ token }: { token: string }) { const [patients, setPatients] = useState<Patient[]>([]), [patientId, setPatientId] = useState<number | null>(null), [summary, setSummary] = useState<Summary | null>(null), [entries, setEntries] = useState<Entry[]>([]), [message, setMessage] = useState(""); useEffect(() => { request("/accounts/", token).then(r => r.ok ? r.json() : { patients: [] }).then(data => { setPatients(data.patients); setPatientId(current => current || data.patients[0]?.id || null); }); }, [token]); useEffect(() => { if (!patientId) return; const load = () => { request(`/patients/dashboard/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : null).then(setSummary); request(`/events/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : []).then((events: ApiEvent[]) => setEntries(events.slice(0, 8).map(e => ({ id: e.id, time: new Date(e.created_at).toLocaleTimeString(), kind: e.event_type, text: e.action, status: e.status })))); }; load(); const timer = window.setInterval(load, 15000); return () => window.clearInterval(timer); }, [token, patientId]); const acknowledge = async () => { if (!patientId) return; const r = await request("/safety/acknowledge/", token, { method: "POST", body: JSON.stringify({ patient_id: patientId }) }); const data = await r.json(); setMessage(r.ok ? "Emergency acknowledged." : data.detail || "Unable to acknowledge."); }; return <main className="assist-shell"><section className="content-card"><div className="section-heading"><div><p className="eyebrow">PATIENT OPERATIONS</p><h2>Live safety oversight</h2></div><button className="danger" disabled={!patientId} onClick={() => void acknowledge()}>Acknowledge emergency</button></div><label className="patient-picker">Patient<select value={patientId || ""} onChange={e => setPatientId(Number(e.target.value))}>{patients.map(patient => <option key={patient.id} value={patient.id}>{patient.name} - Room {patient.room_number}</option>)}</select></label>{patientId ? <><section className="metric-grid"><Metric label="Status" value={display(summary?.status || "ACTIVE")} detail={summary?.wellness?.pending ? "Wellness response required" : "Latest patient state"} /><Metric label="Emergencies" value={String(summary?.counts.emergency || 0)} detail="Escalations, excluding audit rows" /><Metric label="Notifications" value={summary?.system.notifications || "STANDBY"} detail="In-app delivered; SMS needs provider setup" /></section><History entries={entries} compact /></> : <p className="empty-state">Create a patient account to use live oversight.</p>}{message && <p className="hint">{message}</p>}</section></main>; }
+function AdminOperations({ token }: { token: string }) { const [patients, setPatients] = useState<Patient[]>([]), [patientId, setPatientId] = useState<number | null>(null), [summary, setSummary] = useState<Summary | null>(null), [entries, setEntries] = useState<Entry[]>([]), [message, setMessage] = useState(""); useEffect(() => { request("/accounts/", token).then(r => r.ok ? r.json() : { patients: [] }).then(data => { setPatients(data.patients); setPatientId(current => current || data.patients[0]?.id || null); }); }, [token]); useEffect(() => { if (!patientId) return; const load = () => { request(`/patients/dashboard/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : null).then(setSummary); request(`/events/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : []).then((events: ApiEvent[]) => setEntries(events.slice(0, 8).map(e => ({ id: e.id, time: new Date(e.created_at).toLocaleTimeString(), kind: e.event_type, text: e.action, status: e.status })))); }; load(); const timer = window.setInterval(load, 15000); return () => window.clearInterval(timer); }, [token, patientId]); const acknowledge = async () => { if (!patientId) return; const r = await request("/safety/acknowledge/", token, { method: "POST", body: JSON.stringify({ patient_id: patientId }) });
+  const data = await r.json();
+  setMessage(r.ok ? "Emergency acknowledged." : data.detail || "Unable to acknowledge.");
+}; return <main className="assist-shell"><section className="content-card"><div className="section-heading"><div><p className="eyebrow">PATIENT OPERATIONS</p><h2>Live safety oversight</h2></div><button className="danger" disabled={!patientId} onClick={() => void acknowledge()}>Acknowledge emergency</button></div><label className="patient-picker">Patient<select value={patientId || ""} onChange={e => setPatientId(Number(e.target.value))}>{patients.map(patient => <option key={patient.id} value={patient.id}>{patient.name} - Room {patient.room_number}</option>)}</select></label>{patientId ? <><section className="metric-grid"><Metric label="Status" value={display(summary?.status || "ACTIVE")} detail={summary?.wellness?.pending ? "Wellness response required" : "Latest patient state"} /><Metric label="Emergencies" value={String(summary?.counts.emergency || 0)} detail="Escalations, excluding audit rows" /><Metric label="Notifications" value={summary?.system.notifications || "STANDBY"} detail="In-app delivered; SMS needs provider setup" /></section><History entries={entries} compact /></> : <p className="empty-state">Create a patient account to use live oversight.</p>}{message && <p className="hint">{message}</p>}</section></main>; }
 
 function Platform({ token, profile, patient, setPatient, signOut }: { token: string; profile: Profile; patient: Patient; setPatient: (p: Patient) => void; signOut: () => void }) {
   const [view, setView] = useState<View>("dashboard"), [state, setState] = useState<State>("ACTIVE"), [entries, setEntries] = useState<Entry[]>([]), [summary, setSummary] = useState<Summary | null>(null), [notice, setNotice] = useState("");
   const add = (kind: string, text: string, status = "SUCCESS") => setEntries(value => [{ id: Date.now(), time: new Date().toLocaleTimeString(), kind, text, status }, ...value]); const scoped = (body: object) => profile.role === "caregiver" ? { ...body, patient_id: patient.id } : body;
-  const post = async (path: string, data: object) => { const r = await request(path, token, { method: "POST", body: JSON.stringify(scoped(data)) }); const json = await r.json(); if (!r.ok) throw Error(json.detail || json.metadata?.error || "Request failed"); return json; };
+  const post = async (path: string, data: object) => {
+    const r = await request(path, token, { method: "POST", body: JSON.stringify(scoped(data)) });
+    const responseText = await r.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = responseText ? JSON.parse(responseText) as Record<string, unknown> : {};
+    } catch {
+      json = {};
+    }
+    if (!r.ok) {
+      const detail = json.detail || json.metadata;
+      throw Error(typeof detail === "string" ? detail : `Request failed (${r.status}). The server returned an unexpected response.`);
+    }
+    if (!responseText || !Object.keys(json).length) throw Error("The server returned an invalid response. Please check the backend logs.");
+    return json;
+  };
   const load = () => { const suffix = profile.role === "caregiver" ? `?patient_id=${patient.id}` : ""; request(`/events/${suffix}`, token).then(r => r.ok ? r.json() : []).then((events: ApiEvent[]) => setEntries(events.map(e => ({ id: e.id, time: new Date(e.created_at).toLocaleTimeString(), kind: e.event_type, text: e.action, status: e.status })))).catch(() => {}); request(`/patients/dashboard/${suffix}`, token).then(r => r.ok ? r.json() : null).then((data: Summary | null) => { if (data) { setSummary(data); setState(data.status); } }).catch(() => {}); };
   useEffect(() => { load(); const refresh = window.setInterval(load, 30000); return () => window.clearInterval(refresh); }, [token, patient.id, profile.role]);
-  useEffect(() => { const protocol = window.location.protocol === "https:" ? "wss" : "ws"; const liveToken = localStorage.getItem("blinkassist_token") || token; const socket = new WebSocket(`${protocol}://${window.location.host}/ws/patient/${patient.id}/?token=${encodeURIComponent(liveToken)}`); socket.onmessage = () => load(); return () => socket.close(); }, [token, patient.id, profile.role]);
+  useEffect(() => { const protocol = window.location.protocol === "https:" ? "wss" : "ws"; const liveToken = localStorage.getItem("blinkassist_token") || token; const socket = new WebSocket(`${protocol}://${window.location.host}/ws/patient/${patient.id}/?token=${encodeURIComponent(liveToken)}`);
+  socket.onmessage = () => load();
+  return () => socket.close();
+  }, [token, patient.id, profile.role]);
   const updateStatus = async (next: State) => { setState(next); try { await post("/safety/status/", { state: next, reason: "Patient dashboard update" }); } catch {} }; const emergency = async (): Promise<boolean> => { await updateStatus("EMERGENCY"); try { await post("/safety/emergency/", { trigger: "Emergency menu selection", countdown_seconds: 5 }); add("Emergency", "Emergency menu selection", "PENDING"); load(); return true; } catch (e) { setNotice(e instanceof Error ? e.message : "Emergency could not be saved."); return false; } };
-  if (profile.role === "caregiver") return <CaregiverWorkspace token={token} patient={patient} patients={profile.patients || []} setPatient={setPatient} entries={entries} summary={summary} signOut={signOut} onAcknowledge={async () => { try { await post("/safety/acknowledge/", {}); add("Emergency", "Acknowledged"); load(); } catch (e) { setNotice(e instanceof Error ? e.message : "Acknowledgement failed."); } }} notice={notice} />;
+  if (profile.role === "caregiver") return <><TelegramConnect token={token} /><CaregiverWorkspace token={token} patient={patient} patients={profile.patients || []} setPatient={setPatient} entries={entries} summary={summary} signOut={signOut} onAcknowledge={async () => { try { await post("/safety/acknowledge/", {}); add("Emergency", "Acknowledged"); load(); } catch (e) { setNotice(e instanceof Error ? e.message : "Acknowledgement failed."); } }} notice={notice} /></>;
   return <AACWorkspace token={token} patient={patient} entries={entries} summary={summary} state={state} add={add} post={post} onEmergency={emergency} onState={updateStatus} signOut={signOut} />;
   return <main className="assist-shell platform-shell"><header className="assist-header"><div><p className="eyebrow">BLINKASSIST / LIVE CARE WORKSPACE</p><h1>{patient.name || "Patient"} <span>· Room {patient.room_number || "not set"}</span></h1></div><div className="header-actions"><b className={`state ${state.toLowerCase()}`}>{display(state)}</b><button onClick={signOut}>Sign out</button></div></header><nav className="tabs" aria-label="Primary navigation">{(["dashboard", "communication", "appliances", "history", "safety", "metrics", "calibration", "settings"] as View[]).map(v => <button key={v} onClick={() => setView(v)} className={v === view ? "active" : ""}>{v}</button>)}</nav>{notice && <p className="error-text" role="alert">{notice}</p>}{view === "dashboard" && <Dashboard token={token} patient={patient} summary={summary} entries={entries} state={state} onState={updateStatus} onEmergency={emergency} onBlink={kind => { add("BLINK", kind.toUpperCase()); void post("/events/", { event_type: "BLINK", action: kind.toUpperCase(), status: "SUCCESS" }).catch(() => {}); }} />}{view === "communication" && <Communication post={post} add={add} />}{view === "appliances" && <Appliances post={post} add={add} />}{view === "history" && <History entries={entries} />}{view === "safety" && <Safety state={state} change={updateStatus} wellness={async () => { try { await post("/safety/wellness/", {}); add("Wellness", "Wellness check started", "PENDING"); } catch {} }} emergency={emergency} />}{view === "metrics" && <Metrics summary={summary} />}{view === "calibration" && <Calibration />}{view === "settings" && <Settings />}<footer>Supports communication and wellness checks. It is not a medical diagnostic device.</footer></main>;
 }
@@ -79,7 +138,7 @@ type AACMenu = "home" | "communication" | "appliances";
 type AACOption = { label: string; value: string; detail: string };
 function AACWorkspace({ token, patient, entries, summary, state, add, post, onEmergency, onState, signOut }: { token: string; patient: Patient; entries: Entry[]; summary: Summary | null; state: State; add: (kind: string, text: string, status?: string) => void; post: (path: string, data: object) => Promise<unknown>; onEmergency: () => Promise<boolean>; onState: (state: State) => void; signOut: () => void }) {
   const [menu, setMenu] = useState<AACMenu>("home"), [index, setIndex] = useState(0), [autoScan, setAutoScan] = useState(false), [interval, setIntervalValue] = useState(3000), [inactivitySeconds, setInactivitySeconds] = useState(30), [phrases, setPhrases] = useState(() => JSON.parse(localStorage.getItem("blinkassist_phrases") || JSON.stringify(messages)) as string[]), [pendingState, setPending] = useState<AACOption | null>(null), [telemetry, setTelemetry] = useState<DetectResponse | null>(null), [lastActivity, setLastActivity] = useState(Date.now()), [wellnessPrompt, setWellnessPrompt] = useState(false), [wellnessChoice, setWellnessChoice] = useState<"yes" | "no">("yes"), [emergencyPrompt, setEmergencyPrompt] = useState(false), [emergencyChoice, setEmergencyChoice] = useState<"keep" | "cancel">("keep"), [lightOn, setLightOn] = useState(false), [wellnessCycle, setWellnessCycle] = useState(0), [announcement, setAnnouncement] = useState("");
-  const faceLostSince = useRef<number | null>(null), safetyStage = useRef(0);
+  const faceLostSince = useRef<number | null>(null), safetyStage = useRef(0), sleepPanelRoot = useRef<Root | null>(null);
   const pending = pendingState as AACOption;
   const options: AACOption[] = menu === "home" ? [{ label: "Communication", value: "communication", detail: "Speak a care request" }, { label: "Appliances", value: "appliances", detail: "Control connected devices" }] : menu === "communication" ? [...phrases.map(label => ({ label, value: `message:${label}`, detail: "Send and speak message" })), { label: "Back", value: "back", detail: "Return to home" }] : [...devices.map(device => ({ label: device.label, value: `device:${device.command}`, detail: "Send command to Arduino" })), { label: "Back", value: "back", detail: "Return to home" }];
   const reset = () => { setMenu("home"); setIndex(0); setPending(null); };
@@ -90,6 +149,16 @@ function AACWorkspace({ token, patient, entries, summary, state, add, post, onEm
   const confirm = async () => { if (!pending) return; setLastActivity(Date.now()); try { if (pending.value.startsWith("message:")) { const message = pending.value.slice(8); await post("/communications/", { message }); add("Communication", message); announce(message === "Call Caregiver" ? "Your caregiver has been called." : `Your request for ${message.replace(/^Need /i, "").toLowerCase()} has been sent.`); } else if (pending.value.startsWith("device:")) { const result = await post("/appliances/command/", { command: pending.value.slice(7) }) as { status?: string }; if (result.status && result.status !== "SUCCESS") throw Error("The appliance did not confirm the command."); add("Appliance", pending.label); announce(`${pending.label} confirmed.`); } } catch { add("System", `${pending.label} failed`, "FAILED"); announce(`Unable to complete ${pending.label.toLowerCase()}. Please try again.`); } finally { reset(); } };
   const gesture = (kind: "single" | "double" | "triple" | "long" | "sustained") => { setLastActivity(Date.now()); add("Blink", kind.toUpperCase()); void post("/events/", { event_type: "BLINK", action: kind.toUpperCase(), status: "SUCCESS" }).catch(() => {}); if (kind === "sustained") { void startEmergency(); return; } if (wellnessPrompt) { if (kind === "single") { setWellnessChoice(choice => choice === "yes" ? "no" : "yes"); return; } if (kind === "double") { void respondToWellness(wellnessChoice === "yes"); return; } if (kind === "long") { setWellnessChoice("yes"); return; } } if (emergencyPrompt) { if (kind === "single") { setEmergencyChoice(choice => choice === "keep" ? "cancel" : "keep"); return; } if (kind === "double") { if (emergencyChoice === "cancel") void cancelEmergency(); else setEmergencyPrompt(false); return; } if (kind === "long") { setEmergencyChoice("keep"); return; } } if (kind === "long") { pending ? setPending(null) : reset(); return; } if (kind === "single") { if (!autoScan) setIndex(value => (value + 1) % options.length); return; } if (kind === "double") void (pending ? confirm() : select()); };
   const announce = (text: string) => { setAnnouncement(text); speak(text); };
+  useEffect(() => {
+    const host = document.createElement("div");
+    host.id = "sleep-mode-root";
+    document.body.appendChild(host);
+    sleepPanelRoot.current = createRoot(host);
+    return () => { sleepPanelRoot.current?.unmount(); sleepPanelRoot.current = null; host.remove(); };
+  }, []);
+  useEffect(() => {
+    sleepPanelRoot.current?.render(<SleepModePanel telemetry={telemetry} loadState={() => request("/safety/sleep_mode/", token)} post={post} add={add} announce={announce} />);
+  }, [telemetry, token, post, add, announcement]);
   const callCaregiver = async (withVoice = true) => { if (withVoice) announce("Calling your caregiver for assistance."); try { await post("/communications/", { message: "Call Caregiver" }); add("Communication", "Call Caregiver"); announce("Your caregiver has been called."); } catch { add("Communication", "Call Caregiver failed", "FAILED"); announce("Unable to call your caregiver. Please try again."); } };
   const beginHourlyWellnessCheck = async () => { if (wellnessPrompt) { announce("A well-being check is already in progress."); return; } try { await post("/safety/wellness/", {}); onState("WELLNESS_CHECK_PENDING"); setWellnessPrompt(true); add("Wellness", "Hourly well-being check started", "PENDING"); announce("Are you okay? Do you need any assistance? Please give a long blink if you are okay."); } catch { add("Wellness", "Well-being check failed", "FAILED"); announce("Unable to start the well-being check. We will try again in one hour."); setWellnessCycle(value => value + 1); } };
   const confirmHourlyWellness = async () => { try { await post("/safety/wellness_response/", { successful: true }); onState("ACTIVE"); add("Wellness", "Patient confirmed: I am OK"); announce("Okay. We will check again in one hour."); } catch { add("Wellness", "Could not save response", "FAILED"); announce("Your response could not be saved. We will check again in one hour."); } finally { setWellnessPrompt(false); setWellnessCycle(value => value + 1); } };
@@ -145,7 +214,14 @@ function Dashboard({ token, patient, summary, entries, state, onState, onEmergen
 
 function EyeDiagram({ left, right, active }: { left?: number | null; right?: number | null; active: boolean }) { return <svg className="eye-diagram" viewBox="0 0 260 88" role="img" aria-label="Stylised eye landmark visualization"><path d="M12 44 Q65 5 118 44 Q65 83 12 44Z" /><path d="M142 44 Q195 5 248 44 Q195 83 142 44Z" /><circle cx="65" cy="44" r="12" /><circle cx="195" cy="44" r="12" />{[36, 50, 65, 80, 94].map((x, i) => <circle key={i} cx={x} cy={44 + (i % 2 ? -16 : 16)} r="2.5" />)}{[166, 180, 195, 210, 224].map((x, i) => <circle key={i} cx={x} cy={44 + (i % 2 ? -16 : 16)} r="2.5" />)}<text x="65" y="82">L {left?.toFixed(3) ?? "—"}</text><text x="195" y="82">R {right?.toFixed(3) ?? "—"}</text><text x="130" y="15">{active ? "FACE MESH ACTIVE" : "WAITING FOR FACE"}</text></svg>; }
 function EventLog({ entries, latest }: { entries: Entry[]; latest?: DetectResponse["event"] }) { const live = latest ? [{ id: -1, time: new Date().toLocaleTimeString(), kind: latest.type, text: `${latest.duration_ms}ms blink`, status: "LIVE" }] : []; const items = [...live, ...entries].slice(0, 9); return <div className="event-log-list">{items.length ? items.map(item => <div className="event-log-row" key={item.id}><time>{item.time}</time><b className={item.kind.toLowerCase()}>{display(item.kind)}</b><span>{display(item.text)}</span></div>) : <p className="empty-state">Camera detections and command activity will appear here.</p>}</div>; }
-function LiveCamera({ token: _token, onBlink, onTelemetry }: { token: string; onBlink: (kind: "single" | "double" | "triple" | "long" | "sustained") => void; onTelemetry: (data: DetectResponse) => void }) { const video = useRef<HTMLVideoElement>(null), canvas = useRef<HTMLCanvasElement | null>(null), timer = useRef<number>(), stream = useRef<MediaStream>(), callback = useRef(onBlink); const [active, setActive] = useState(false), [error, setError] = useState(""), [stats, setStats] = useState<DetectResponse | null>(null), [connected, setConnected] = useState(false); useEffect(() => { callback.current = onBlink; }, [onBlink]); useEffect(() => () => { if (timer.current) clearTimeout(timer.current); stream.current?.getTracks().forEach(track => track.stop()); }, []); async function start() { try { setError(""); const media = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" }, audio: false }); stream.current = media; if (video.current) { video.current.srcObject = media; await video.current.play(); } if (!canvas.current) canvas.current = document.createElement("canvas"); canvas.current.width = 640; canvas.current.height = 480; setActive(true); loop(); } catch (e) { setError(e instanceof Error ? e.message : "Camera permission was denied."); } } function stop() { if (timer.current) clearTimeout(timer.current); stream.current?.getTracks().forEach(track => track.stop()); stream.current = undefined; if (video.current) video.current.srcObject = null; setActive(false); setConnected(false); } async function loop() { const element = video.current, surface = canvas.current; if (!element || !surface || !stream.current) return; if (element.readyState >= 2) { surface.getContext("2d")?.drawImage(element, 0, 0, 640, 480); try { const response = await fetch(`${API}/detect/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: surface.toDataURL("image/jpeg", 0.65) }) }); const data: DetectResponse = await response.json(); if (!response.ok) throw Error("Detector unavailable"); setStats(data); onTelemetry(data); setConnected(true); if (data.event) callback.current(data.event.type); } catch { setConnected(false); } } timer.current = window.setTimeout(loop, 125); } return <section className="live-camera console-panel"><div className="camera-title"><div><p className="eyebrow">LIVE CAMERA</p><h3>Face & eye landmarks</h3></div><b className={connected ? "camera-good" : "camera-bad"}>{connected ? "LIVE" : active ? "CONNECTING" : "OFFLINE"}</b></div><div className="camera-frame"><video ref={video} muted playsInline className={active ? "visible" : ""} /><svg viewBox="0 0 640 480" className="landmark-overlay">{[...(stats?.eye_landmarks?.left || []), ...(stats?.eye_landmarks?.right || [])].map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" />)}</svg><div className="camera-placeholder">{active ? (stats?.face ? "Face detected · landmarks active" : "Position your face in view") : "Start camera to begin monitoring"}</div></div><div className="camera-actions"><button onClick={start} disabled={active}>Start camera</button><button className="secondary" onClick={stop} disabled={!active}>Stop</button></div>{error && <p className="error-text">{error}</p>}</section>; }
+function LiveCamera({ token: _token, onBlink, onTelemetry }: { token: string; onBlink: (kind: "single" | "double" | "triple" | "long" | "sustained") => void; onTelemetry: (data: DetectResponse) => void }) { const video = useRef<HTMLVideoElement>(null), canvas = useRef<HTMLCanvasElement | null>(null), timer = useRef<number>(), stream = useRef<MediaStream>(), callback = useRef(onBlink); const [active, setActive] = useState(false), [error, setError] = useState(""), [stats, setStats] = useState<DetectResponse | null>(null), [connected, setConnected] = useState(false); useEffect(() => { callback.current = onBlink; }, [onBlink]); useEffect(() => () => { if (timer.current) clearTimeout(timer.current); stream.current?.getTracks().forEach(track => track.stop()); }, []); async function start() { try { setError(""); const media = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" }, audio: false }); stream.current = media; if (video.current) { video.current.srcObject = media; await video.current.play(); } if (!canvas.current) canvas.current = document.createElement("canvas"); canvas.current.width = 640; canvas.current.height = 480; setActive(true); loop(); } catch (e) { setError(e instanceof Error ? e.message : "Camera permission was denied."); } } function stop() { if (timer.current) clearTimeout(timer.current); stream.current?.getTracks().forEach(track => track.stop()); stream.current = undefined; if (video.current) video.current.srcObject = null; setActive(false); setConnected(false); } async function loop() { const element = video.current, surface = canvas.current; if (!element || !surface || !stream.current) return; if (element.readyState >= 2) { surface.getContext("2d")?.drawImage(element, 0, 0, 640, 480); try { const response = await fetch(`${API}/detect/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: surface.toDataURL("image/jpeg", 0.65) }) });
+      const data: DetectResponse = await response.json();
+      if (!response.ok) throw Error("Detector unavailable");
+      setStats(data);
+      onTelemetry(data);
+      setConnected(true);
+      if (data.event) callback.current(data.event.type);
+    } catch { setConnected(false); } } timer.current = window.setTimeout(loop, 125); } return <section className="live-camera console-panel"><div className="camera-title"><div><p className="eyebrow">LIVE CAMERA</p><h3>Face & eye landmarks</h3></div><b className={connected ? "camera-good" : "camera-bad"}>{connected ? "LIVE" : active ? "CONNECTING" : "OFFLINE"}</b></div><div className="camera-frame"><video ref={video} muted playsInline className={active ? "visible" : ""} /><svg viewBox="0 0 640 480" className="landmark-overlay">{[...(stats?.eye_landmarks?.left || []), ...(stats?.eye_landmarks?.right || [])].map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" />)}</svg><div className="camera-placeholder">{active ? (stats?.face ? "Face detected · landmarks active" : "Position your face in view") : "Start camera to begin monitoring"}</div></div><div className="camera-actions"><button onClick={start} disabled={active}>Start camera</button><button className="secondary" onClick={stop} disabled={!active}>Stop</button></div>{error && <p className="error-text">{error}</p>}</section>; }
 
 function Communication({ post, add }: { post: (path: string, data: object) => Promise<unknown>; add: (kind: string, text: string, status?: string) => void }) { const [selected, setSelected] = useState<string | null>(null), [speaking, setSpeaking] = useState(""); const send = async (message: string) => { const phrase = message === "Call Caregiver" ? "Calling caregiver" : `I need ${message.slice(5).toLowerCase()}`;
   setSelected(message);
@@ -183,4 +259,72 @@ function speak(text: string) {
   synthesis.speak(utterance);
   synthesis.resume();
   return true;
+}
+
+function TelegramConnect({ token }: { token: string }) {
+  const [connected, setConnected] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [link, setLink] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async (showResult = false) => {
+    try {
+      const response = await request("/caregiver/telegram/", token);
+      const data = await response.json() as { connected?: boolean; bot_username?: string; configured?: boolean };
+      if (!response.ok) throw new Error("Telegram connection status could not be loaded.");
+      const isConnected = Boolean(data.connected);
+      setConnected(isConnected);
+      setConfigured(Boolean(data.configured));
+      if (isConnected) {
+        setLink("");
+        if (showResult) setMessage("Telegram is connected. You can receive caregiver alerts in the bot chat.");
+      } else if (showResult) {
+        setMessage("Not connected yet. Open the link below in Telegram and press Start. If you already did, make sure the poll_telegram command is running, wait a few seconds, then check again.");
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Telegram connection status could not be loaded.");
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [token]);
+
+  const createLink = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await request("/caregiver/telegram/", token, { method: "POST" });
+      const data = await response.json() as { url?: string; detail?: string };
+      if (!response.ok || !data.url) throw new Error(data.detail || "Could not create a Telegram link.");
+      setLink(data.url);
+      setMessage("Open this link in Telegram and press Start to finish linking. It expires in 10 minutes.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create a Telegram link.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <section className="assist-shell telegram-connect-shell">
+    <section className="content-card">
+      <p className="eyebrow">CAREGIVER ALERTS</p>
+      <h2>Telegram notifications</h2>
+      {connected ? <p role="status">Telegram is connected. Safety alerts can be sent to your Telegram chat.</p> : <>
+        <p className="hint">Connect Telegram to receive emergency, Sleep Mode, camera-loss, and “Call Caregiver” alerts. Routine activity is not sent.</p>
+        {!configured && <p className="error-text" role="alert">Telegram bot token and username are not configured on the server yet.</p>}
+        {!link ? <button type="button" disabled={busy || !configured} onClick={() => void createLink()}>{busy ? "Creating link…" : "Connect Telegram"}</button> : <p>
+          <a className="telegram-link-button" href={link} target="_blank" rel="noreferrer">Open Telegram and press Start</a>
+          <button type="button" onClick={() => void refresh(true)}>I pressed Start · Check status</button>
+        </p>}
+        <p className="hint">The Telegram poller must be running on the BlinkAssist server to complete linking.</p>
+      </>}
+      {message && <p className="error-text" role="alert">{message}</p>}
+      {connected && <button type="button" onClick={() => void refresh(true)}>Refresh connection status</button>}
+    </section>
+  </section>;
 }

@@ -24,7 +24,15 @@ class Caregiver(TimestampedModel):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="caregiver_profile")
     phone_number = models.CharField(max_length=32, blank=True)
     whatsapp_number = models.CharField(max_length=32, blank=True)
+    telegram_chat_id = models.BigIntegerField(null=True, blank=True, unique=True)
     patients = models.ManyToManyField(Patient, related_name="caregivers", blank=True)
+
+
+class TelegramLinkToken(TimestampedModel):
+    caregiver = models.ForeignKey(Caregiver, on_delete=models.CASCADE, related_name="telegram_link_tokens")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
 
 
 class CalibrationProfile(TimestampedModel):
@@ -79,6 +87,13 @@ class PatientStatusLog(TimestampedModel):
     reason = models.CharField(max_length=255, blank=True)
 
 
+class SafetyMonitorState(TimestampedModel):
+    """Persist deduplication guards for automatic sleep and camera alerts."""
+    patient = models.OneToOneField(Patient, on_delete=models.CASCADE, related_name="safety_monitor_state")
+    sleep_mode_on = models.BooleanField(default=False)
+    camera_loss_alerted = models.BooleanField(default=False)
+
+
 class WellnessCheckLog(TimestampedModel):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="wellness_checks")
     prompted_at = models.DateTimeField(auto_now_add=True)
@@ -92,6 +107,7 @@ class NotificationLog(TimestampedModel):
         EMAIL = "EMAIL", "Email"
         WHATSAPP = "WHATSAPP", "WhatsApp"
         PUSH = "PUSH", "Push"
+        TELEGRAM = "TELEGRAM", "Telegram"
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="notifications")
     caregiver = models.ForeignKey(Caregiver, on_delete=models.CASCADE, related_name="notifications")
     channel = models.CharField(max_length=16, choices=Channel.choices)
