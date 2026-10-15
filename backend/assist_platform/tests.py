@@ -240,7 +240,7 @@ class TelegramNotificationTests(TestCase):
         send_message.assert_called_once_with(987654321, "Telegram is connected to your BlinkAssist caregiver account.")
 
     @patch("assist_platform.services.urlopen")
-    def test_alert_is_sent_to_telegram_only_and_delivery_is_audited(self, urlopen_mock):
+    def test_alert_is_sent_to_telegram_and_audited_without_fake_push_delivery(self, urlopen_mock):
         self.caregiver.telegram_chat_id = 1122334455
         self.caregiver.save(update_fields=["telegram_chat_id"])
         response = urlopen_mock.return_value.__enter__.return_value
@@ -253,7 +253,7 @@ class TelegramNotificationTests(TestCase):
         telegram_log = NotificationLog.objects.get(event=event, caregiver=self.caregiver, channel=NotificationLog.Channel.TELEGRAM)
         self.assertEqual(telegram_log.status, "SENT")
         self.assertEqual(telegram_log.provider_id, "42")
-        self.assertTrue(NotificationLog.objects.filter(event=event, channel=NotificationLog.Channel.PUSH, status="DELIVERED").exists())
+        self.assertFalse(NotificationLog.objects.filter(event=event, channel=NotificationLog.Channel.PUSH).exists())
         self.assertFalse(NotificationLog.objects.filter(event=event, channel=NotificationLog.Channel.SMS).exists())
         urlopen_mock.assert_called_once()
 

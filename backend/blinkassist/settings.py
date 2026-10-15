@@ -1,7 +1,4 @@
-"""
-Django settings for BlinkAssist (Objectives 1 & 2).
-Minimal config: REST API + Channels (WebSocket) + CORS for the React (Vite) frontend.
-"""
+"""Django settings for BlinkAssist (Objectives 1 & 2)."""
 from pathlib import Path
 import os
 
@@ -22,7 +19,6 @@ DEBUG = os.environ.get("DEBUG", "True") == "True"
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
-    "daphne",
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "django.contrib.sessions",
@@ -31,7 +27,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "corsheaders",
-    "channels",
     "detector",
     "assist_platform",
 ]
@@ -53,12 +48,7 @@ TEMPLATES = [{
     ]},
 }]
 
-ASGI_APPLICATION = "blinkassist.asgi.application"
 WSGI_APPLICATION = "blinkassist.wsgi.application"
-
-# Use RedisChannelLayer in a multi-worker deployment. In-memory is retained for
-# the no-Docker local setup and must not be used with multiple ASGI processes.
-CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
 

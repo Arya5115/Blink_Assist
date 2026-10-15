@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import CalibrationProfile, Caregiver, CommunicationLog, DatasetFrame, DatasetSession, EmergencyLog, Event, NotificationLog, Patient, PatientStatusLog, SafetyMonitorState, WellnessCheckLog
 from .serializers import CalibrationSerializer, CaregiverSerializer, CommunicationLogSerializer, DatasetFrameSerializer, DatasetSessionSerializer, EventSerializer, PatientSerializer, StatusSerializer, WellnessSerializer
-from .services import broadcast, create_event, create_telegram_link, notify_caregivers
+from .services import create_event, create_telegram_link, notify_caregivers
 from .permissions import ADMIN, CAREGIVER, PATIENT, require_patient_controller, role_for
 from .serial_gateway import ArduinoGateway
 
@@ -108,7 +108,7 @@ class PatientViewSet(viewsets.ReadOnlyModelViewSet):
         patient = patient_for(request)
         events = Event.objects.filter(patient=patient)
         latest_status = patient.status_logs.first()
-        notification_logs = NotificationLog.objects.filter(event__patient=patient)
+        telegram_logs = NotificationLog.objects.filter(event__patient=patient, channel=NotificationLog.Channel.TELEGRAM)
         pending_wellness = patient.wellness_checks.filter(responded_at__isnull=True).first()
         return Response({
             "patient": PatientSerializer(patient).data,
@@ -122,9 +122,8 @@ class PatientViewSet(viewsets.ReadOnlyModelViewSet):
                 "communications": events.filter(event_type=Event.Type.COMMUNICATION).count(),
             },
             "system": {
-                "websocket": "READY",
                 "calibration": "READY" if patient.calibrations.filter(is_active=True).exists() else "PENDING",
-                "notifications": "SENT" if notification_logs.filter(status="SENT").exists() else ("FAILED" if notification_logs.filter(status="FAILED").exists() else ("IN_APP_DELIVERED" if notification_logs.filter(status="DELIVERED").exists() else ("NOT_CONFIGURED" if notification_logs.exists() else "STANDBY"))),
+                "notifications": "SENT" if telegram_logs.filter(status="SENT").exists() else ("FAILED" if telegram_logs.filter(status="FAILED").exists() else ("NOT_CONFIGURED" if telegram_logs.exists() else "STANDBY")),
                 "arduino": "CONFIGURED" if __import__("os").environ.get("ARDUINO_PORT") else "NOT_CONFIGURED",
             },
             "recent_events": EventSerializer(events[:8], many=True).data,
@@ -143,8 +142,7 @@ class EventViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         require_patient_controller(self.request)
         patient = patient_for(self.request)
-        event = serializer.save(patient=patient)
-        broadcast(patient.id, "event.created", {"id": event.id, "type": event.event_type, "action": event.action, "status": event.status})
+        serializer.save(patient=patient)
 
     @action(detail=False, methods=["get"])
     def export(self, request):
@@ -296,9 +294,8 @@ class SafetyViewSet(viewsets.ViewSet):
         if check:
             return Response(WellnessSerializer(check).data)
         check = WellnessCheckLog.objects.create(patient=patient)
-        event = create_event(patient, Event.Type.WELLNESS, "Wellness check requested", {"check_id": check.id}, Event.Status.PENDING)
+        create_event(patient, Event.Type.WELLNESS, "Wellness check requested", {"check_id": check.id}, Event.Status.PENDING)
         PatientStatusLog.objects.create(patient=patient, state=PatientStatusLog.State.WELLNESS_CHECK_PENDING, reason="Waiting for patient response")
-        broadcast(patient.id, "wellness.requested", {"check_id": check.id})
         return Response(WellnessSerializer(check).data, status=201)
 
     @action(detail=False, methods=["post"])
@@ -318,7 +315,6 @@ class SafetyViewSet(viewsets.ViewSet):
         next_state = PatientStatusLog.State.ACTIVE if check.successful else PatientStatusLog.State.UNRESPONSIVE
         PatientStatusLog.objects.create(patient=patient, state=next_state, reason="Patient confirmed wellness" if check.successful else "Patient did not confirm wellness")
         create_event(patient, Event.Type.WELLNESS, "Patient is OK" if check.successful else "Patient needs help", {"check_id": check.id, "successful": check.successful})
-        broadcast(patient.id, "wellness.responded", {"check_id": check.id, "successful": check.successful})
         return Response(WellnessSerializer(check).data)
 
     @action(detail=False, methods=["post"])
@@ -358,7 +354,6 @@ class SafetyViewSet(viewsets.ViewSet):
         emergency.event.status = Event.Status.CANCELLED
         emergency.event.save(update_fields=["status"])
         create_event(patient, Event.Type.EMERGENCY, "Emergency cancelled", {"emergency_id": emergency.id}, Event.Status.CANCELLED)
-        broadcast(patient.id, "emergency.cancelled", {"id": emergency.id})
         return Response({"id": emergency.id, "status": "CANCELLED"})
 
 
@@ -380,7 +375,6 @@ class ApplianceViewSet(viewsets.ViewSet):
             event.status = Event.Status.FAILED
             event.metadata = {"error": str(exc)}
         event.save(update_fields=["status", "metadata"])
-        broadcast(patient.id, "arduino.command", {"id": event.id, "command": command, "status": event.status, **event.metadata})
         return Response(EventSerializer(event).data, status=201 if event.status == Event.Status.SUCCESS else 503)
 
 

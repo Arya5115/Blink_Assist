@@ -6,32 +6,19 @@ import secrets
 from datetime import timedelta
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from .models import Caregiver, Event, NotificationLog, TelegramLinkToken
 
 
-def broadcast(patient_id, event_name, payload):
-    layer = get_channel_layer()
-    async_to_sync(layer.group_send)(f"patient_{patient_id}", {"type": "platform.event", "event": event_name, "payload": payload})
-
-
 def create_event(patient, event_type, action, metadata=None, status=Event.Status.SUCCESS):
-    event = Event.objects.create(patient=patient, event_type=event_type, action=action, metadata=metadata or {}, status=status)
-    broadcast(patient.id, "event.created", {"id": event.id, "type": event_type, "action": action, "status": status})
-    return event
+    return Event.objects.create(patient=patient, event_type=event_type, action=action, metadata=metadata or {}, status=status)
 
 
 def notify_caregivers(event):
     """Send explicit caregiver alerts to linked Telegram chats and audit delivery."""
     for caregiver in event.patient.caregivers.all():
         _send_telegram(event, caregiver)
-        NotificationLog.objects.create(
-            event=event, caregiver=caregiver, channel="PUSH", status="DELIVERED",
-            attempts=1, delivered_at=timezone.now(), provider_id="websocket",
-        )
     telegram_logs = NotificationLog.objects.filter(event=event, channel=NotificationLog.Channel.TELEGRAM)
     if telegram_logs.filter(status="SENT").exists():
         action, status = "Caregiver Telegram alert sent", Event.Status.SUCCESS
@@ -41,9 +28,7 @@ def notify_caregivers(event):
         action, status = "Caregiver Telegram not configured", Event.Status.FAILED
     else:
         action, status = "No linked caregiver for Telegram alert", Event.Status.FAILED
-    audit = Event.objects.create(patient=event.patient, event_type=Event.Type.NOTIFICATION, action=action, status=status, metadata={"source_event_id": event.id})
-    broadcast(event.patient_id, "notification.audit", {"id": audit.id, "action": action, "status": status})
-    broadcast(event.patient_id, "notification.delivered", {"event_id": event.id, "channel": "PUSH"})
+    Event.objects.create(patient=event.patient, event_type=Event.Type.NOTIFICATION, action=action, status=status, metadata={"source_event_id": event.id})
 
 
 def create_telegram_link(caregiver):

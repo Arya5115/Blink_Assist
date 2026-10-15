@@ -1,16 +1,20 @@
-# BlinkAssist - Django + React
+git add -A
+git status --short
+git diff --cached --stat
+git commit -m "Remove WebSockets and smooth camera preview"
+git push origin main# BlinkAssist - Django + React
 
 Vision-based assistive communication for ALS / locked-in patients.
 Implements **Objectives 1 & 2** of the review paper.
 
 ```
-backend/   Django 4 + DRF + Channels + OpenCV + MediaPipe
+backend/   Django 4 + DRF + OpenCV + MediaPipe
 frontend/  React 18 + Vite + TypeScript
 ```
 
 See `docs/PROJECT_REPORT.md` for the original detector implementation and
 [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md) for the
-assistive communication, safety, WebSocket, API, Arduino, and production plan.
+assistive communication, safety, API, Arduino, and production plan.
 This project uses a direct local/service deployment; Docker is not included.
 
 ## Telegram caregiver alerts

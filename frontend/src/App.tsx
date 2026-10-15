@@ -94,7 +94,13 @@ export default function App() {
   return <><Platform token={token} profile={profile} patient={patient} setPatient={setPatient} signOut={signOut} />{themeSwitch}</>;
 }
 
-function Login({ onLogin, error }: { onLogin: (access: string, refresh: string) => void; error: string }) { const [mode, setMode] = useState<"login" | "register">("login"), [role, setRole] = useState<"patient" | "caregiver">("patient"), [username, setUsername] = useState(""), [password, setPassword] = useState(""), [message, setMessage] = useState(error); async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setMessage(""); const form = new FormData(e.currentTarget); const endpoint = mode === "login" ? "/auth/token/" : "/auth/register/"; const payload = mode === "login" ? { username, password } : { ...Object.fromEntries(form.entries()), username, password, role }; const r = await fetch(`${API}${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const data = await r.json(); if (!r.ok) return setMessage(data.detail || "We could not complete that request."); onLogin(data.access, data.refresh); } return <main className="assist-shell login-shell"><section className="content-card login-card"><p className="eyebrow">BLINKASSIST / SECURE ACCESS</p><h1>{mode === "login" ? "Welcome back." : "Create your care profile."}</h1><p className="hint">{mode === "login" ? "Sign in with your existing patient, caregiver or administrator account." : "Choose a non-privileged role. Administrator access is provisioned by an existing administrator."}</p><div className="auth-tabs"><button className={mode === "login" ? "active" : ""} type="button" onClick={() => { setMode("login"); setMessage(""); }}>Sign in</button><button className={mode === "register" ? "active" : ""} type="button" onClick={() => { setMode("register"); setMessage(""); }}>New user</button></div><form onSubmit={submit}>{mode === "register" && <><label>Choose role<select value={role} onChange={e => setRole(e.target.value as "patient" | "caregiver")}><option value="patient">Patient</option><option value="caregiver">Caregiver</option></select></label><p className="role-note">Administrator accounts are created by an administrator after verification.</p><label>Full name<input name="name" required /></label><label>Email<input name="email" type="email" autoComplete="email" /></label>{role === "patient" ? <><label>Room number<input name="room_number" /></label><label>Age<input name="age" type="number" min="0" /></label></> : <><label>Mobile number<input name="phone_number" /></label><label>WhatsApp number<input name="whatsapp_number" /></label></>}</>}<label>Username<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} /></label><label>Password<input required type="password" minLength={mode === "register" ? 10 : undefined} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={e => setPassword(e.target.value)} /></label>{message && <p className="error-text" role="alert">{message}</p>}<button>{mode === "login" ? "Sign in securely" : `Create ${role} account`}</button></form><p className="auth-footnote">{mode === "login" ? "New here? Choose New user to register." : "Already registered? Choose Sign in."}</p></section></main>; }
+function Login({ onLogin, error }: { onLogin: (access: string, refresh: string) => void; error: string }) { const [mode, setMode] = useState<"login" | "register">("login"), [role, setRole] = useState<"patient" | "caregiver">("patient"), [username, setUsername] = useState(""), [password, setPassword] = useState(""), [message, setMessage] = useState(error); async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setMessage(""); const form = new FormData(e.currentTarget); const endpoint = mode === "login" ? "/auth/token/" : "/auth/register/";
+      const payload = mode === "login" ? { username, password } : { ...Object.fromEntries(form.entries()), username, password, role };
+      const r = await fetch(`${API}${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await r.json();
+      if (!r.ok) return setMessage(data.detail || "We could not complete that request.");
+      onLogin(data.access, data.refresh);
+    } return <main className="assist-shell login-shell"><section className="content-card login-card"><p className="eyebrow">BLINKASSIST / SECURE ACCESS</p><h1>{mode === "login" ? "Welcome back." : "Create your care profile."}</h1><p className="hint">{mode === "login" ? "Sign in with your existing patient, caregiver or administrator account." : "Choose a non-privileged role. Administrator access is provisioned by an existing administrator."}</p><div className="auth-tabs"><button className={mode === "login" ? "active" : ""} type="button" onClick={() => { setMode("login"); setMessage(""); }}>Sign in</button><button className={mode === "register" ? "active" : ""} type="button" onClick={() => { setMode("register"); setMessage(""); }}>New user</button></div><form onSubmit={submit}>{mode === "register" && <><label>Choose role<select value={role} onChange={e => setRole(e.target.value as "patient" | "caregiver")}><option value="patient">Patient</option><option value="caregiver">Caregiver</option></select></label><p className="role-note">Administrator accounts are created by an administrator after verification.</p><label>Full name<input name="name" required /></label><label>Email<input name="email" type="email" autoComplete="email" /></label>{role === "patient" ? <><label>Room number<input name="room_number" /></label><label>Age<input name="age" type="number" min="0" /></label></> : <><label>Mobile number<input name="phone_number" /></label><label>WhatsApp number<input name="whatsapp_number" /></label></>}</>}<label>Username<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} /></label><label>Password<input required type="password" minLength={mode === "register" ? 10 : undefined} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={e => setPassword(e.target.value)} /></label>{message && <p className="error-text" role="alert">{message}</p>}<button>{mode === "login" ? "Sign in securely" : `Create ${role} account`}</button></form><p className="auth-footnote">{mode === "login" ? "New here? Choose New user to register." : "Already registered? Choose Sign in."}</p></section></main>; }
 
 function AdminPanel({ token, signOut }: { token: string; signOut: () => void }) { const [role, setRole] = useState<"patient" | "caregiver">("patient"), [message, setMessage] = useState(""), [patients, setPatients] = useState<Patient[]>([]), [caregivers, setCaregivers] = useState<Caregiver[]>([]); useEffect(() => { request("/accounts/", token).then(r => r.json()).then(data => { setPatients(data.patients || []); setCaregivers(data.caregivers || []); }).catch(() => setMessage("Could not load patients and caregivers.")); }, [token]); async function create(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const form = new FormData(e.currentTarget); const payload = Object.fromEntries(form.entries()); const patientIds = form.getAll("patient_ids").map(Number); const caregiverIds = form.getAll("caregiver_ids").map(Number); const response = await request("/accounts/", token, { method: "POST", body: JSON.stringify({ ...payload, role, patient_ids: patientIds, caregiver_ids: caregiverIds }) });
   const data = await response.json();
@@ -104,14 +110,19 @@ function AdminPanel({ token, signOut }: { token: string; signOut: () => void }) 
   if (role === "patient") setPatients(current => [...current, data.patient]);
 } return <main className="assist-shell"><header className="assist-header"><div><p className="eyebrow">BLINKASSIST / ADMINISTRATION</p><h1>Identity & care access</h1><p className="hint">Provision patient and caregiver profiles with server-enforced roles.</p></div><button onClick={signOut}>Sign out</button></header><section className="content-card admin-form"><form onSubmit={create}><label>Role<select value={role} onChange={e => setRole(e.target.value as "patient" | "caregiver")}><option value="patient">Patient — controls and camera</option><option value="caregiver">Caregiver — assigned patient records</option></select></label><label>Full name<input name="name" required /></label><label>Username<input name="username" required /></label><label>Password<input name="password" type="password" minLength={10} required /></label><label>Email<input name="email" type="email" /></label>{role === "patient" ? <><label>Age<input name="age" type="number" min="0" /></label><label>Room number<input name="room_number" /></label><fieldset><legend>Assign to existing caregivers (select any)</legend>{caregivers.length ? caregivers.map(caregiver => <label key={caregiver.id}><input name="caregiver_ids" value={caregiver.id} type="checkbox" /> {caregiver.name || caregiver.email}</label>) : <p className="hint">Create a caregiver account first.</p>}</fieldset></> : <><label>Mobile number<input name="phone_number" placeholder="+919876543210" /></label><label>WhatsApp number<input name="whatsapp_number" placeholder="+919876543210" /></label><fieldset><legend>Assigned patients</legend>{patients.length ? patients.map(p => <label key={p.id}><input name="patient_ids" value={p.id} type="checkbox" /> {p.name} · Room {p.room_number}</label>) : <p className="hint">Create a patient account first.</p>}</fieldset></>}<button>Create {role}</button>{message && <p className="hint">{message}</p>}</form></section></main>; }
 
-function AdminOperations({ token }: { token: string }) { const [patients, setPatients] = useState<Patient[]>([]), [caregivers, setCaregivers] = useState<Caregiver[]>([]), [patientId, setPatientId] = useState<number | null>(null), [assignmentByPatient, setAssignmentByPatient] = useState<Record<number, number[]>>({}), [summary, setSummary] = useState<Summary | null>(null), [entries, setEntries] = useState<Entry[]>([]), [message, setMessage] = useState(""); const loadAccounts = () => request("/accounts/", token).then(r => r.ok ? r.json() : { patients: [], caregivers: [] }).then(data => { const nextPatients = data.patients || []; setPatients(nextPatients); setCaregivers(data.caregivers || []); setPatientId(current => current || nextPatients[0]?.id || null); setAssignmentByPatient(current => Object.fromEntries(nextPatients.map((patient: Patient) => [patient.id, current[patient.id] || []]))); }); useEffect(() => { void loadAccounts(); }, [token]);  useEffect(() => { if (!patientId) return; const load = () => { request(`/patients/dashboard/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : null).then(setSummary); request(`/events/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : []).then((events: ApiEvent[]) => setEntries(events.slice(0, 8).map(e => ({ id: e.id, time: new Date(e.created_at).toLocaleTimeString(), kind: e.event_type, text: e.action, status: e.status })))); }; load(); const timer = window.setInterval(load, 15000); return () => window.clearInterval(timer); }, [token, patientId]); const assignPatient = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assignments = Object.entries(assignmentByPatient).filter(([, caregiverIds]) => caregiverIds.length).map(([selectedPatientId, caregiverIds]) => ({ patient_id: Number(selectedPatientId), caregiver_ids: caregiverIds })); if (!assignments.length) return; const response = await request("/accounts/assign/", token, { method: "POST", body: JSON.stringify({ assignments }) }); const data = await response.json(); setMessage(response.ok ? `Saved ${data.assignment_count} patient assignment(s).` : (data.detail || "Could not assign patients.")); if (response.ok) await loadAccounts(); }; const acknowledge = async () => { if (!patientId) return; const r = await request("/safety/acknowledge/", token, { method: "POST", body: JSON.stringify({ patient_id: patientId }) });
+function AdminOperations({ token }: { token: string }) { const [patients, setPatients] = useState<Patient[]>([]), [caregivers, setCaregivers] = useState<Caregiver[]>([]), [patientId, setPatientId] = useState<number | null>(null), [assignmentByPatient, setAssignmentByPatient] = useState<Record<number, number[]>>({}), [summary, setSummary] = useState<Summary | null>(null), [entries, setEntries] = useState<Entry[]>([]), [message, setMessage] = useState(""); const loadAccounts = () => request("/accounts/", token).then(r => r.ok ? r.json() : { patients: [], caregivers: [] }).then(data => { const nextPatients = data.patients || []; setPatients(nextPatients); setCaregivers(data.caregivers || []); setPatientId(current => current || nextPatients[0]?.id || null); setAssignmentByPatient(current => Object.fromEntries(nextPatients.map((patient: Patient) => [patient.id, current[patient.id] || []]))); }); useEffect(() => { void loadAccounts(); }, [token]);  useEffect(() => { if (!patientId) return; const load = () => { request(`/patients/dashboard/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : null).then(setSummary); request(`/events/?patient_id=${patientId}`, token).then(r => r.ok ? r.json() : []).then((events: ApiEvent[]) => setEntries(events.slice(0, 8).map(e => ({ id: e.id, time: new Date(e.created_at).toLocaleTimeString(), kind: e.event_type, text: e.action, status: e.status })))); }; load(); const timer = window.setInterval(load, 15000); return () => window.clearInterval(timer); }, [token, patientId]); const assignPatient = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assignments = Object.entries(assignmentByPatient).filter(([, caregiverIds]) => caregiverIds.length).map(([selectedPatientId, caregiverIds]) => ({ patient_id: Number(selectedPatientId), caregiver_ids: caregiverIds })); if (!assignments.length) return; const response = await request("/accounts/assign/", token, { method: "POST", body: JSON.stringify({ assignments }) });
+  const data = await response.json();
+  setMessage(response.ok ? `Saved ${data.assignment_count} patient assignment(s).` : (data.detail || "Could not assign patients."));
+  if (response.ok) await loadAccounts();
+}; const acknowledge = async () => { if (!patientId) return; const r = await request("/safety/acknowledge/", token, { method: "POST", body: JSON.stringify({ patient_id: patientId }) });
   const data = await r.json();
   setMessage(r.ok ? "Emergency acknowledged." : data.detail || "Unable to acknowledge.");
 }; return <main className="assist-shell"><section className="content-card assignment-card"><div className="section-heading"><div><p className="eyebrow">CARE ACCESS</p><h2>Assign caregivers per patient</h2><p className="hint">Each patient has an independent caregiver list. Select multiple caregivers for one patient, or reuse a caregiver across several patients.</p></div></div><form className="assignment-form assignment-patient-form" onSubmit={assignPatient}>{patients.length ? patients.map(patient => <fieldset key={patient.id}><legend>{patient.name} - Room {patient.room_number || "not set"}</legend>{caregivers.length ? caregivers.map(caregiver => <label key={caregiver.id}><input type="checkbox" checked={(assignmentByPatient[patient.id] || []).includes(caregiver.id)} onChange={e => setAssignmentByPatient(current => ({ ...current, [patient.id]: e.target.checked ? [...(current[patient.id] || []), caregiver.id] : (current[patient.id] || []).filter(id => id !== caregiver.id) }))} /> {caregiver.name || caregiver.email}</label>) : <p className="hint">Create a caregiver account first.</p>}</fieldset>) : <p className="hint">Create a patient account first.</p>}<button type="submit" disabled={!patients.length || !caregivers.length}>Save assignments</button></form>{message && <p className="hint" role="status">{message}</p>}</section><section className="content-card"><div className="section-heading"><div><p className="eyebrow">PATIENT OPERATIONS</p><h2>Live safety oversight</h2></div><button className="danger" disabled={!patientId} onClick={() => void acknowledge()}>Acknowledge emergency</button></div><label className="patient-picker">Patient<select value={patientId || ""} onChange={e => setPatientId(Number(e.target.value))}>{patients.map(patient => <option key={patient.id} value={patient.id}>{patient.name} - Room {patient.room_number}</option>)}</select></label>{patientId ? <><section className="metric-grid"><Metric label="Status" value={display(summary?.status || "ACTIVE")} detail={summary?.wellness?.pending ? "Wellness response required" : "Latest patient state"} /><Metric label="Emergencies" value={String(summary?.counts.emergency || 0)} detail="Escalations, excluding audit rows" /><Metric label="Notifications" value={summary?.system.notifications || "STANDBY"} detail="Delivery status" /></section><History entries={entries} compact /></> : <p className="empty-state">Create a patient account to use live oversight.</p>}</section></main>; }
 
 function Platform({ token, profile, patient, setPatient, signOut }: { token: string; profile: Profile; patient: Patient; setPatient: (p: Patient) => void; signOut: () => void }) {
   const [view, setView] = useState<View>("dashboard"), [state, setState] = useState<State>("ACTIVE"), [entries, setEntries] = useState<Entry[]>([]), [summary, setSummary] = useState<Summary | null>(null), [notice, setNotice] = useState("");
-  const add = (kind: string, text: string, status = "SUCCESS") => setEntries(value => [{ id: Date.now(), time: new Date().toLocaleTimeString(), kind, text, status }, ...value]); const scoped = (body: object) => profile.role === "caregiver" ? { ...body, patient_id: patient.id } : body;
+  const add = (kind: string, text: string, status = "SUCCESS") => setEntries(value => [{ id: Date.now(), time: new Date().toLocaleTimeString(), kind, text, status }, ...value]);
+  const scoped = (body: object) => profile.role === "caregiver" ? { ...body, patient_id: patient.id } : body;
   const post = async (path: string, data: object) => {
     const r = await request(path, token, { method: "POST", body: JSON.stringify(scoped(data)) });
     const responseText = await r.text();
@@ -130,10 +141,6 @@ function Platform({ token, profile, patient, setPatient, signOut }: { token: str
   };
   const load = () => { const suffix = profile.role === "caregiver" ? `?patient_id=${patient.id}` : ""; request(`/events/${suffix}`, token).then(r => r.ok ? r.json() : []).then((events: ApiEvent[]) => setEntries(events.map(e => ({ id: e.id, time: new Date(e.created_at).toLocaleTimeString(), kind: e.event_type, text: e.action, status: e.status })))).catch(() => {}); request(`/patients/dashboard/${suffix}`, token).then(r => r.ok ? r.json() : null).then((data: Summary | null) => { if (data) { setSummary(data); setState(data.status); } }).catch(() => {}); };
   useEffect(() => { load(); const refresh = window.setInterval(load, 30000); return () => window.clearInterval(refresh); }, [token, patient.id, profile.role]);
-  useEffect(() => { const protocol = window.location.protocol === "https:" ? "wss" : "ws"; const liveToken = localStorage.getItem("blinkassist_token") || token; const socket = new WebSocket(`${protocol}://${window.location.host}/ws/patient/${patient.id}/?token=${encodeURIComponent(liveToken)}`);
-  socket.onmessage = () => load();
-  return () => socket.close();
-  }, [token, patient.id, profile.role]);
   const updateStatus = async (next: State) => { setState(next); try { await post("/safety/status/", { state: next, reason: "Patient dashboard update" }); } catch {} }; const emergency = async (): Promise<boolean> => { await updateStatus("EMERGENCY"); try { await post("/safety/emergency/", { trigger: "Emergency menu selection", countdown_seconds: 5 }); add("Emergency", "Emergency menu selection", "PENDING"); load(); return true; } catch (e) { setNotice(e instanceof Error ? e.message : "Emergency could not be saved."); return false; } };
   if (profile.role === "caregiver") return <><TelegramConnect token={token} /><CaregiverWorkspace token={token} patient={patient} patients={profile.patients || []} setPatient={setPatient} entries={entries} summary={summary} signOut={signOut} onAcknowledge={async () => { try { await post("/safety/acknowledge/", {}); add("Emergency", "Acknowledged"); load(); } catch (e) { setNotice(e instanceof Error ? e.message : "Acknowledgement failed."); } }} notice={notice} /></>;
   return <AACWorkspace token={token} patient={patient} entries={entries} summary={summary} state={state} add={add} post={post} onEmergency={emergency} onState={updateStatus} signOut={signOut} />;
@@ -184,9 +191,17 @@ function AACWorkspace({ token, patient, entries, summary, state, add, post, onEm
   return <main className="aac-shell"><header className="aac-header"><div><p className="eyebrow">BLINKASSIST / AAC + LIVE MONITORING</p><h1>{pending ? "Confirm selection" : display(menu)}</h1><p>{patient.name} · {autoScan ? `Auto scan every ${interval / 1000}s` : "Manual scan"}</p></div><div className="aac-status"><span className={telemetry?.face ? "online" : ""}>{telemetry?.face ? "Face detected" : "Waiting for face"}</span><button className="ghost" onClick={() => void document.documentElement.requestFullscreen?.()}>Fullscreen</button><button className="ghost" onClick={signOut}>Sign out</button></div></header><section className="aac-stage" aria-live="polite"><div className="aac-instructions"><b>Single blink / →</b> Move <b>Double blink / Enter</b> Select <b>Long blink / Esc</b> Back / cancel <b>5 rapid blinks</b> Emergency</div>{wellnessPrompt && <section className="aac-confirm wellness-prompt" role="dialog" aria-modal="true"><p className="eyebrow">WELLNESS CHECK</p><h2>Are you OK?</h2><p>Mouse/touch: choose an answer. Blink: <b>one single blink</b> changes the highlighted answer; <b>one double blink</b> confirms it. No response for 30 seconds escalates to emergency.</p><div><button className={wellnessChoice === "yes" ? "selected-state" : ""} onClick={() => void respondToWellness(true)}>YES — selected first; double blink confirms</button><button className={`danger ${wellnessChoice === "no" ? "selected-state" : ""}`} onClick={() => void respondToWellness(false)}>NO / I need help — 1 single blink, then double blink</button></div></section>}{emergencyPrompt && <section className="aac-confirm emergency-prompt" role="dialog" aria-modal="true"><p className="eyebrow">EMERGENCY ESCALATED</p><h2>Emergency alert active</h2><p>Mouse/touch: choose an action. Blink: one single blink changes the highlighted action; one double blink confirms it.</p><div><button className={`secondary ${emergencyChoice === "cancel" ? "selected-state" : ""}`} onClick={() => void cancelEmergency()}>FALSE ALARM — 1 single blink, then double blink</button><button className={emergencyChoice === "keep" ? "selected-state" : ""} onClick={() => setEmergencyPrompt(false)}>KEEP ALERT ACTIVE — selected first; double blink confirms</button></div></section>}{!wellnessPrompt && !emergencyPrompt && (pending ? <section className="aac-confirm"><p className="eyebrow">CONFIRM ACTION</p><h2>{pending.label}</h2><p>{pending.detail}</p><div><span>Double blink to confirm</span><span>Long blink to cancel</span></div></section> : <div className="aac-options">{options.map((option, optionIndex) => <article className={`aac-option ${optionIndex === index ? "selected" : ""}`} key={option.value}><span>{String(optionIndex + 1).padStart(2, "0")}</span><div><h2>{option.label}</h2><p>{option.detail}</p></div>{optionIndex === index && <b>SELECTED</b>}</article>)}</div>)}<AACLivePanel token={token} telemetry={telemetry} entries={entries} state={state} onTelemetry={setTelemetry} onBlink={gesture} onWellness={() => void startWellnessCheck()} onEmergency={() => void startEmergency()} /><AACUtilityPanel entries={entries} summary={summary} telemetry={telemetry} post={post} phrases={phrases} onPhrases={values => { setPhrases(values); localStorage.setItem("blinkassist_phrases", JSON.stringify(values)); }} autoScan={autoScan} interval={interval} inactivitySeconds={inactivitySeconds} onAutoScan={setAutoScan} onInterval={setIntervalValue} onInactivity={setInactivitySeconds} /></section><footer className="aac-footer">Current selection: <b>{pending?.label || options[index]?.label}</b> · Automatic wellness check starts after 30 seconds without a detected face</footer></main>;
 }
 
-function AACUtilityPanel({ entries, summary, telemetry, post, phrases, onPhrases, autoScan, interval, inactivitySeconds, onAutoScan, onInterval, onInactivity }: { entries: Entry[]; summary: Summary | null; telemetry: DetectResponse | null; post: (path: string, data: object) => Promise<unknown>; phrases: string[]; onPhrases: (values: string[]) => void; autoScan: boolean; interval: number; inactivitySeconds: number; onAutoScan: (value: boolean) => void; onInterval: (value: number) => void; onInactivity: (value: number) => void }) { const [capturing, setCapturing] = useState(false), [samples, setSamples] = useState<number[]>([]), [message, setMessage] = useState(""), [phrase, setPhrase] = useState(""); useEffect(() => { if (capturing && telemetry?.face && !telemetry.blinking && telemetry.ear != null) setSamples(values => values.length < 30 ? [...values, telemetry.ear!] : values); }, [capturing, telemetry]); useEffect(() => { if (samples.length === 30) setCapturing(false); }, [samples.length]); const saveCalibration = async () => { if (samples.length < 30) return; const mean = samples.reduce((total, value) => total + value, 0) / samples.length; const stddev = Math.sqrt(samples.reduce((total, value) => total + (value - mean) ** 2, 0) / samples.length); try { await post("/calibrations/", { open_ear_mean: mean, open_ear_stddev: stddev, threshold: mean * .75, sample_count: samples.length }); setMessage(`Saved threshold ${(mean * .75).toFixed(3)}.`); setSamples([]); } catch { setMessage("Calibration could not be saved."); } }; const addPhrase = () => { const value = phrase.trim(); if (value && !phrases.includes(value)) onPhrases([...phrases, value]); setPhrase(""); }; return <section className="aac-utility-panel"><section><p className="eyebrow">OPERATIONAL HISTORY</p><h2>Recent activity</h2><History entries={entries.slice(0, 8)} compact /></section><section><p className="eyebrow">SCANNER & SAFETY SETTINGS</p><h2>Preferences</h2><label className="toggle"><input type="checkbox" checked={autoScan} onChange={e => onAutoScan(e.target.checked)} /> Automatic scan</label><label>Scan interval<select value={interval} disabled={!autoScan} onChange={e => onInterval(Number(e.target.value))}>{[2000, 3000, 5000, 8000].map(value => <option key={value} value={value}>{value / 1000} seconds</option>)}</select></label><p className="hint">Scanning pauses immediately after choosing a menu, appliance, or confirmation step.</p><label>Inactivity reset<select value={inactivitySeconds} onChange={e => onInactivity(Number(e.target.value))}>{[15, 30, 60].map(value => <option key={value} value={value}>{value} seconds</option>)}</select></label><p className="hint">These are regular controls, not blink-scanned options.</p><div className="aac-server-counts"><span>Communications <b>{summary?.counts.communications ?? 0}</b></span><span>Emergencies <b>{summary?.counts.emergency ?? 0}</b></span></div><p className="eyebrow">AAC PHRASES</p><div className="aac-phrase-form"><input value={phrase} maxLength={60} placeholder="Add a phrase" onChange={e => setPhrase(e.target.value)} /><button onClick={addPhrase}>Add</button></div><small>{phrases.length} available communication phrases</small><p className="eyebrow">GUIDED CALIBRATION</p><p className="hint">Keep eyes open and face centred while 30 stable samples are captured.</p><button onClick={() => { setSamples([]); setCapturing(true); setMessage("Capturing open-eye baseline…"); }} disabled={capturing}> {capturing ? `Capturing ${samples.length}/30` : "Capture baseline"}</button><button className="secondary" onClick={() => void saveCalibration()} disabled={samples.length < 30}>Save calibration</button>{message && <small>{message}</small>}</section></section>; }
+function AACUtilityPanel({ entries, summary, telemetry, post, phrases, onPhrases, autoScan, interval, inactivitySeconds, onAutoScan, onInterval, onInactivity }: { entries: Entry[]; summary: Summary | null; telemetry: DetectResponse | null; post: (path: string, data: object) => Promise<unknown>; phrases: string[]; onPhrases: (values: string[]) => void; autoScan: boolean; interval: number; inactivitySeconds: number; onAutoScan: (value: boolean) => void; onInterval: (value: number) => void; onInactivity: (value: number) => void }) { const [capturing, setCapturing] = useState(false), [samples, setSamples] = useState<number[]>([]), [message, setMessage] = useState(""), [phrase, setPhrase] = useState(""); useEffect(() => { if (capturing && telemetry?.face && !telemetry.blinking && telemetry.ear != null) setSamples(values => values.length < 30 ? [...values, telemetry.ear!] : values); }, [capturing, telemetry]); useEffect(() => { if (samples.length === 30) setCapturing(false); }, [samples.length]); const saveCalibration = async () => { if (samples.length < 30) return; const mean = samples.reduce((total, value) => total + value, 0) / samples.length; const stddev = Math.sqrt(samples.reduce((total, value) => total + (value - mean) ** 2, 0) / samples.length); try { await post("/calibrations/", { open_ear_mean: mean, open_ear_stddev: stddev, threshold: mean * .75, sample_count: samples.length });
+  setMessage(`Saved threshold ${(mean * .75).toFixed(3)}.`);
+  setSamples([]);
+} catch { setMessage("Calibration could not be saved."); } };
+const addPhrase = () => { const value = phrase.trim(); if (value && !phrases.includes(value)) onPhrases([...phrases, value]);
+  setPhrase("");
+};
+return <section className="aac-utility-panel"><section><p className="eyebrow">OPERATIONAL HISTORY</p><h2>Recent activity</h2><History entries={entries.slice(0, 8)} compact /></section><section><p className="eyebrow">SCANNER & SAFETY SETTINGS</p><h2>Preferences</h2><label className="toggle"><input type="checkbox" checked={autoScan} onChange={e => onAutoScan(e.target.checked)} /> Automatic scan</label><label>Scan interval<select value={interval} disabled={!autoScan} onChange={e => onInterval(Number(e.target.value))}>{[2000, 3000, 5000, 8000].map(value => <option key={value} value={value}>{value / 1000} seconds</option>)}</select></label><p className="hint">Scanning pauses immediately after choosing a menu, appliance, or confirmation step.</p><label>Inactivity reset<select value={inactivitySeconds} onChange={e => onInactivity(Number(e.target.value))}>{[15, 30, 60].map(value => <option key={value} value={value}>{value} seconds</option>)}</select></label><p className="hint">These are regular controls, not blink-scanned options.</p><div className="aac-server-counts"><span>Communications <b>{summary?.counts.communications ?? 0}</b></span><span>Emergencies <b>{summary?.counts.emergency ?? 0}</b></span></div><p className="eyebrow">AAC PHRASES</p><div className="aac-phrase-form"><input value={phrase} maxLength={60} placeholder="Add a phrase" onChange={e => setPhrase(e.target.value)} /><button onClick={addPhrase}>Add</button></div><small>{phrases.length} available communication phrases</small><p className="eyebrow">GUIDED CALIBRATION</p><p className="hint">Keep eyes open and face centred while 30 stable samples are captured.</p><button onClick={() => { setSamples([]); setCapturing(true); setMessage("Capturing open-eye baseline…"); }} disabled={capturing}> {capturing ? `Capturing ${samples.length}/30` : "Capture baseline"}</button><button className="secondary" onClick={() => void saveCalibration()} disabled={samples.length < 30}>Save calibration</button>{message && <small>{message}</small>}</section></section>; }
 function AACLivePanel({ token, telemetry, entries, state, onTelemetry, onBlink, onWellness, onEmergency }: { token: string; telemetry: DetectResponse | null; entries: Entry[]; state: State; onTelemetry: (data: DetectResponse) => void; onBlink: (kind: "single" | "double" | "triple" | "long" | "sustained") => void; onWellness: () => void; onEmergency: () => void }) { return <section className="aac-live-overview"><section className="aac-camera"><LiveCamera token={token} onTelemetry={onTelemetry} onBlink={onBlink} /></section><section className="aac-live-card"><p className="eyebrow">LIVE EAR</p><strong>{telemetry?.ear?.toFixed(3) ?? "—"}</strong><div className="aac-ear-values"><span>LEFT <b>{telemetry?.ear_left?.toFixed(3) ?? "—"}</b></span><span>RIGHT <b>{telemetry?.ear_right?.toFixed(3) ?? "—"}</b></span></div><p>Threshold: <b>{telemetry?.threshold?.toFixed(3) ?? "Calibrating"}</b></p><div className="progress"><i style={{ width: `${(telemetry?.calibration || 0) * 100}%` }} /></div><small>Calibration {Math.round((telemetry?.calibration || 0) * 100)}%</small></section><section className="aac-live-card"><p className="eyebrow">EYE LANDMARK VISUALIZATION</p><EyeDiagram left={telemetry?.ear_left} right={telemetry?.ear_right} active={!!telemetry?.face} /><small>Landmarks are also drawn directly over the live camera feed.</small></section><section className="aac-live-card aac-ear-history"><p className="eyebrow">EAR HISTORY</p><Signal ear={telemetry?.ear} threshold={telemetry?.threshold} /></section><section className="aac-live-card aac-event-log"><p className="eyebrow">BLINK EVENT LOG</p><EventLog entries={entries} latest={telemetry?.event} /></section><AACSystemPanel telemetry={telemetry} entries={entries} state={state} onWellness={onWellness} onEmergency={onEmergency} /></section>; }
-function AACSystemPanel({ telemetry, entries, state, onWellness, onEmergency }: { telemetry: DetectResponse | null; entries: Entry[]; state: State; onWellness: () => void; onEmergency: () => void }) { const systems = [["Safety state", display(state)], ["Face detection", telemetry?.face ? "ONLINE" : "WAITING"], ["Detector", telemetry ? "ONLINE" : "STANDBY"], ["Calibration", `${Math.round((telemetry?.calibration || 0) * 100)}%`]]; return <section className="aac-system-panel"><div><p className="eyebrow">SYSTEM PERFORMANCE & BLINK TOTALS</p><div className="aac-stat-grid"><span><b>{telemetry ? "8" : "—"}</b>FPS</span><span><b>{telemetry ? "125ms" : "—"}</b>Latency</span><span><b>{telemetry?.counts.total ?? 0}</b>Total blinks</span><span><b>{telemetry?.counts.double ?? 0}</b>Double</span></div></div><div><p className="eyebrow">SAFETY & CALIBRATION</p><div className="aac-system-list">{systems.map(([label, value]) => <span key={label}><b>{label}</b><i className={value === "ONLINE" || value === "ACTIVE" ? "good" : ""}>{value}</i></span>)}</div></div><div><p className="eyebrow">CURRENT COMMAND & CARE</p><b className="aac-current-action">{telemetry?.event ? `${display(telemetry.event.type)} blink detected` : entries[0] ? `${display(entries[0].kind)}: ${display(entries[0].text)}` : "Monitoring for commands"}</b><div className="aac-care-actions"><button onClick={onWellness}>Start wellness check</button><button className="danger" onClick={onEmergency}>Emergency</button></div><small>Emergency is also available from every screen via five rapid blinks.</small></div></section>; }
+function AACSystemPanel({ telemetry, entries, state, onWellness, onEmergency }: { telemetry: DetectResponse | null; entries: Entry[]; state: State; onWellness: () => void; onEmergency: () => void }) { const systems = [["Safety state", display(state)], ["Face detection", telemetry?.face ? "ONLINE" : "WAITING"], ["Detector", telemetry ? "ONLINE" : "STANDBY"], ["Calibration", `${Math.round((telemetry?.calibration || 0) * 100)}%`]];
+  return <section className="aac-system-panel"><div><p className="eyebrow">SYSTEM PERFORMANCE & BLINK TOTALS</p><div className="aac-stat-grid"><span><b>{telemetry ? "8" : "—"}</b>FPS</span><span><b>{telemetry ? "125ms" : "—"}</b>Latency</span><span><b>{telemetry?.counts.total ?? 0}</b>Total blinks</span><span><b>{telemetry?.counts.double ?? 0}</b>Double</span></div></div><div><p className="eyebrow">SAFETY & CALIBRATION</p><div className="aac-system-list">{systems.map(([label, value]) => <span key={label}><b>{label}</b><i className={value === "ONLINE" || value === "ACTIVE" ? "good" : ""}>{value}</i></span>)}</div></div><div><p className="eyebrow">CURRENT COMMAND & CARE</p><b className="aac-current-action">{telemetry?.event ? `${display(telemetry.event.type)} blink detected` : entries[0] ? `${display(entries[0].kind)}: ${display(entries[0].text)}` : "Monitoring for commands"}</b><div className="aac-care-actions"><button onClick={onWellness}>Start wellness check</button><button className="danger" onClick={onEmergency}>Emergency</button></div><small>Emergency is also available from every screen via five rapid blinks.</small></div></section>; }
 
 function Dashboard({ token, patient, summary, entries, state, onState, onEmergency, onBlink }: { token: string; patient: Patient; summary: Summary | null; entries: Entry[]; state: State; onState: (state: State) => void; onEmergency: () => void; onBlink: (kind: "single" | "double" | "triple" | "long" | "sustained") => void }) {
   const [telemetry, setTelemetry] = useState<DetectResponse | null>(null);
@@ -218,38 +233,102 @@ function Dashboard({ token, patient, summary, entries, state, onState, onEmergen
   </section>;
 }
 
-function EyeDiagram({ left, right, active }: { left?: number | null; right?: number | null; active: boolean }) { return <svg className="eye-diagram" viewBox="0 0 260 88" role="img" aria-label="Stylised eye landmark visualization"><path d="M12 44 Q65 5 118 44 Q65 83 12 44Z" /><path d="M142 44 Q195 5 248 44 Q195 83 142 44Z" /><circle cx="65" cy="44" r="12" /><circle cx="195" cy="44" r="12" />{[36, 50, 65, 80, 94].map((x, i) => <circle key={i} cx={x} cy={44 + (i % 2 ? -16 : 16)} r="2.5" />)}{[166, 180, 195, 210, 224].map((x, i) => <circle key={i} cx={x} cy={44 + (i % 2 ? -16 : 16)} r="2.5" />)}<text x="65" y="82">L {left?.toFixed(3) ?? "—"}</text><text x="195" y="82">R {right?.toFixed(3) ?? "—"}</text><text x="130" y="15">{active ? "FACE MESH ACTIVE" : "WAITING FOR FACE"}</text></svg>; }
-function EventLog({ entries, latest }: { entries: Entry[]; latest?: DetectResponse["event"] }) { const live = latest ? [{ id: -1, time: new Date().toLocaleTimeString(), kind: latest.type, text: `${latest.duration_ms}ms blink`, status: "LIVE" }] : []; const items = [...live, ...entries].slice(0, 9); return <div className="event-log-list">{items.length ? items.map(item => <div className="event-log-row" key={item.id}><time>{item.time}</time><b className={item.kind.toLowerCase()}>{display(item.kind)}</b><span>{display(item.text)}</span></div>) : <p className="empty-state">Camera detections and command activity will appear here.</p>}</div>; }
-function LiveCamera({ token: _token, onBlink, onTelemetry }: { token: string; onBlink: (kind: "single" | "double" | "triple" | "long" | "sustained") => void; onTelemetry: (data: DetectResponse) => void }) { const video = useRef<HTMLVideoElement>(null), canvas = useRef<HTMLCanvasElement | null>(null), timer = useRef<number>(), stream = useRef<MediaStream>(), callback = useRef(onBlink); const [active, setActive] = useState(false), [error, setError] = useState(""), [stats, setStats] = useState<DetectResponse | null>(null), [connected, setConnected] = useState(false); useEffect(() => { callback.current = onBlink; }, [onBlink]); useEffect(() => () => { if (timer.current) clearTimeout(timer.current); stream.current?.getTracks().forEach(track => track.stop()); }, []); async function start() { try { setError(""); const media = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" }, audio: false }); stream.current = media; if (video.current) { video.current.srcObject = media; await video.current.play(); } if (!canvas.current) canvas.current = document.createElement("canvas"); canvas.current.width = 640; canvas.current.height = 480; setActive(true); loop(); } catch (e) { setError(e instanceof Error ? e.message : "Camera permission was denied."); } } function stop() { if (timer.current) clearTimeout(timer.current); stream.current?.getTracks().forEach(track => track.stop()); stream.current = undefined; if (video.current) video.current.srcObject = null; setActive(false); setConnected(false); } async function loop() { const element = video.current, surface = canvas.current; if (!element || !surface || !stream.current) return; if (element.readyState >= 2) { surface.getContext("2d")?.drawImage(element, 0, 0, 640, 480); try { const response = await fetch(`${API}/detect/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: surface.toDataURL("image/jpeg", 0.65) }) });
-      const data: DetectResponse = await response.json();
-      if (!response.ok) throw Error("Detector unavailable");
-      setStats(data);
-      onTelemetry(data);
-      setConnected(true);
-      if (data.event) callback.current(data.event.type);
-    } catch { setConnected(false); } } timer.current = window.setTimeout(loop, 125); } return <section className="live-camera console-panel"><div className="camera-title"><div><p className="eyebrow">LIVE CAMERA</p><h3>Face & eye landmarks</h3></div><b className={connected ? "camera-good" : "camera-bad"}>{connected ? "LIVE" : active ? "CONNECTING" : "OFFLINE"}</b></div><div className="camera-frame"><video ref={video} muted playsInline className={active ? "visible" : ""} /><svg viewBox="0 0 640 480" className="landmark-overlay">{[...(stats?.eye_landmarks?.left || []), ...(stats?.eye_landmarks?.right || [])].map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" />)}</svg><div className="camera-placeholder">{active ? (stats?.face ? "Face detected · landmarks active" : "Position your face in view") : "Start camera to begin monitoring"}</div></div><div className="camera-actions"><button onClick={start} disabled={active}>Start camera</button><button className="secondary" onClick={stop} disabled={!active}>Stop</button></div>{error && <p className="error-text">{error}</p>}</section>; }
+function Communication({ post, add }: { post: (path: string, data: object) => Promise<unknown>; add: (kind: string, text: string, status?: string) => void }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [speaking, setSpeaking] = useState("");
+  const send = async (message: string) => {
+    const phrase = message === "Call Caregiver" ? "Calling caregiver" : `I need ${message.slice(5).toLowerCase()}`;
+    setSelected(message);
+    setSpeaking(phrase);
+    speak(phrase);
+    try {
+      await post("/communications/", { message });
+      add("Communication", message);
+    } finally {
+      window.setTimeout(() => setSelected(null), 3000);
+    }
+  };
+  return <section className="content-card"><p className="eyebrow">COMMUNICATION BOARD</p><h2>Choose a need</h2><p className="hint">Single blink moves focus; double blink confirms; long blink returns.</p><div className="choice-grid">{messages.map(message => <button key={message} className={selected === message ? "focused" : ""} onClick={() => void send(message)}>{message}</button>)}</div><section className="speaking-bar"><span className={speaking ? "speaking-dot" : ""}>Speaking now: <b>{speaking || "No active message"}</b></span><div><button onClick={() => speechSynthesis.pause()}>Pause</button><button onClick={() => speechSynthesis.resume()}>Resume</button><button onClick={() => { speechSynthesis.cancel(); setSpeaking(""); }}>Stop</button></div></section></section>;
+}
 
-function Communication({ post, add }: { post: (path: string, data: object) => Promise<unknown>; add: (kind: string, text: string, status?: string) => void }) { const [selected, setSelected] = useState<string | null>(null), [speaking, setSpeaking] = useState(""); const send = async (message: string) => { const phrase = message === "Call Caregiver" ? "Calling caregiver" : `I need ${message.slice(5).toLowerCase()}`;
-  setSelected(message);
-  setSpeaking(phrase);
-  speak(phrase);
-  try {
-    await post("/communications/", { message });
-    add("Communication", message);
-  } finally {
-    window.setTimeout(() => setSelected(null), 3000);
-  }
-}; return <section className="content-card"><p className="eyebrow">COMMUNICATION BOARD</p><h2>Choose a need</h2><p className="hint">Single blink moves focus; double blink confirms; long blink returns.</p><div className="choice-grid">{messages.map(message => <button key={message} className={selected === message ? "focused" : ""} onClick={() => void send(message)}>{message}</button>)}</div><section className="speaking-bar"><span className={speaking ? "speaking-dot" : ""}>Speaking now: <b>{speaking || "No active message"}</b></span><div><button onClick={() => speechSynthesis.pause()}>Pause</button><button onClick={() => speechSynthesis.resume()}>Resume</button><button onClick={() => { speechSynthesis.cancel(); setSpeaking(""); }}>Stop</button></div></section></section>; }
-function Appliances({ post, add }: { post: (path: string, data: object) => Promise<unknown>; add: (kind: string, text: string, status?: string) => void }) { const [busy, setBusy] = useState(""); const command = async (label: string, value: string) => { setBusy(value); speak(label); try { const result = await post("/appliances/command/", { command: value }) as { status: string }; add("Appliance", label, result.status); } catch { add("Appliance", label, "FAILED"); } finally { setBusy(""); } }; return <section className="content-card"><p className="eyebrow">ARDUINO CONTROL</p><h2>Appliances</h2><p className="hint">Commands are allowlisted and show success only after a hardware acknowledgement.</p><div className="choice-grid">{devices.map(device => <button key={device.command} disabled={!!busy} onClick={() => void command(device.label, device.command)}>{busy === device.command ? "Waiting for ACK…" : device.label}</button>)}</div></section>; }
-function CaregiverWorkspace({ token, patient, patients, setPatient, entries, summary, signOut, onAcknowledge, notice }: { token: string; patient: Patient; patients: Patient[]; setPatient: (patient: Patient) => void; entries: Entry[]; summary: Summary | null; signOut: () => void; onAcknowledge: () => void; notice: string }) { const [filter, setFilter] = useState("ALL"), [notifications, setNotifications] = useState<{ id: number; created_at: string; event: string; channel: string; status: string; provider_id: string }[]>([]); const visible = filter === "ALL" ? entries : entries.filter(entry => entry.kind === filter); useEffect(() => { const loadNotifications = () => request(`/notifications/?patient_id=${patient.id}`, token).then(r => r.ok ? r.json() : []).then(setNotifications).catch(() => {}); loadNotifications(); const timer = window.setInterval(loadNotifications, 15000); return () => window.clearInterval(timer); }, [token, patient.id]); const exportEvents = async () => { const response = await request(`/events/export/?patient_id=${patient.id}`, token); if (!response.ok) return; const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a"); link.href = url; link.download = `${patient.name || "patient"}-events.csv`; link.click(); URL.revokeObjectURL(url); }; return <main className="assist-shell"><header className="assist-header"><div><p className="eyebrow">BLINKASSIST / CAREGIVER PORTAL</p><h1>Assigned patient activity</h1></div><button onClick={signOut}>Sign out</button></header><label className="patient-picker">Patient<select value={patient.id} onChange={e => setPatient(patients.find(p => p.id === Number(e.target.value))!)}>{patients.map(p => <option key={p.id} value={p.id}>{p.name} · Room {p.room_number}</option>)}</select></label><section className="metric-grid"><Metric label="Status" value={display(summary?.status || "ACTIVE")} detail="Latest recorded state" /><Metric label="Emergency events" value={String(summary?.counts.emergency || 0)} detail="Review and acknowledge" /><Metric label="Notifications" value={summary?.system.notifications || "STANDBY"} detail="SMS and in-app delivery status" /></section>{notice && <p className="error-text">{notice}</p>}<section className="content-card"><p className="eyebrow">NOTIFICATION INBOX</p><h2>Delivery status</h2>{notifications.length ? <div className="table"><div className="row head"><span>Time</span><span>Channel</span><span>Alert</span><span>Status</span></div>{notifications.map(item => <div className="row" key={item.id}><span>{new Date(item.created_at).toLocaleTimeString()}</span><span>{item.channel}</span><span>{item.event}{item.status === "FAILED" && item.provider_id ? ` — ${item.provider_id}` : ""}</span><span>{item.status}</span></div>)}</div> : <p className="empty-state">No notifications for this patient yet.</p>}</section><section className="content-card"><div className="section-heading"><div><p className="eyebrow">READ-ONLY PATIENT RECORD</p><h2>{patient.name}</h2></div><div><button onClick={exportEvents}>Export CSV</button><button className="danger" onClick={onAcknowledge}>Acknowledge emergency</button></div></div><label>Filter activity<select value={filter} onChange={e => setFilter(e.target.value)}><option>ALL</option><option>EMERGENCY</option><option>COMMUNICATION</option><option>APPLIANCE</option><option>WELLNESS</option></select></label><History entries={visible} /></section></main>; }
-function Safety({ state, change, wellness, emergency }: { state: State; change: (s: State) => void; wellness: () => void; emergency: () => void }) { return <section className="content-card"><p className="eyebrow">SAFETY STATE MACHINE</p><h2>Safety monitoring</h2><p className="hint">This assists activity monitoring and caregiver escalation; it does not diagnose medical conditions.</p><div className="safety-grid">{(["ACTIVE", "IDLE", "SLEEP_CANDIDATE", "FACE_LOST", "WELLNESS_CHECK_PENDING", "UNRESPONSIVE", "EMERGENCY"] as State[]).map(s => <button key={s} className={state === s ? "selected-state" : ""} onClick={() => void change(s)}>{display(s)}</button>)}</div><div className="gesture-controls"><button onClick={wellness}>Start wellness check</button><button className="danger" onClick={emergency}>Trigger emergency countdown</button></div></section>; }
-function Metrics({ summary }: { summary: Summary | null }) { return <section className="content-card"><p className="eyebrow">DETECTION METRICS</p><h2>Quality & performance</h2><div className="metric-grid"><Metric label="Accuracy" value="—" detail="Requires labelled dataset" /><Metric label="Precision" value="—" detail="Requires labelled dataset" /><Metric label="Recall" value="—" detail="Requires labelled dataset" /><Metric label="F1 score" value="—" detail="Requires labelled dataset" /><Metric label="Detection rate" value={String((summary?.counts.single || 0) + (summary?.counts.double || 0))} detail="Recorded blink events" /><Metric label="False positive rate" value="—" detail="Available after review" /></div><p className="hint">Metrics are intentionally not fabricated. Record labelled sessions before using them for performance review.</p></section>; }
-function Settings() { const [dark, setDark] = useState(true); return <section className="content-card"><p className="eyebrow">PREFERENCES</p><h2>Workspace settings</h2><label className="toggle"><input type="checkbox" checked={dark} onChange={e => { setDark(e.target.checked); document.documentElement.dataset.theme = e.target.checked ? "dark" : "light"; }} /> Dark mode</label><p className="hint">Camera access, calibration and event history remain available from their dedicated dashboard areas.</p></section>; }
-function History({ entries, compact = false }: { entries: Entry[]; compact?: boolean }) { return <div className="table"><div className="row head"><span>Time</span><span>Event</span><span>Details</span><span>Status</span></div>{entries.length ? entries.map(e => <div className="row" key={e.id}><span>{e.time}</span><span>{display(e.kind)}</span><span>{display(e.text)}</span><span>{display(e.status)}</span></div>) : <p className="empty-state">{compact ? "No events yet. Live activity will appear here." : "No matching events yet."}</p>}</div>; }
-function Calibration() { const [step, setStep] = useState(1); return <section className="content-card"><p className="eyebrow">ADAPTIVE THRESHOLD</p><h2>Calibration wizard</h2><div className="progress"><i style={{ width: `${step / 3 * 100}%` }} /></div><h3>Step {step}: {["Keep eyes open", "Blink naturally", "Calibration complete"][step - 1]}</h3><p className="hint">The existing detector keeps the stable EAR baseline and adaptive threshold calculation intact.</p><button onClick={() => setStep(Math.min(3, step + 1))}>{step === 3 ? "Save calibration" : "Continue"}</button></section>; }
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <article className="metric-card"><small>{label}</small><strong>{value}</strong><span>{detail}</span></article>; }
-function SystemCard({ title, value }: { title: string; value: string }) { return <article className="system-card"><small>{title}</small><b>{display(value)}</b></article>; }
-function Signal({ ear, threshold }: { ear?: number | null; threshold?: number | null }) { const [samples, setSamples] = useState<number[]>([]); useEffect(() => { if (ear != null) setSamples(previous => [...previous.slice(-79), ear]); }, [ear]); const points = samples.map((sample, index) => `${(index / Math.max(samples.length - 1, 1)) * 100},${100 - Math.min(100, Math.max(0, sample * 300))}`).join(" "); const thresholdY = 100 - Math.min(100, Math.max(0, (threshold || 0.21) * 300)); return <div className="signal ear-history" role="img" aria-label="Rolling Eye Aspect Ratio graph"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="0" x2="100" y1={thresholdY} y2={thresholdY} className="threshold-line" /><polyline points={points} className="ear-line" /></svg><b>threshold {threshold?.toFixed(3) || "—"}</b><span>{samples.length ? "Live rolling EAR history" : "Start the camera to begin the EAR graph"}</span></div>; }
+function Appliances({ post, add }: { post: (path: string, data: object) => Promise<unknown>; add: (kind: string, text: string, status?: string) => void }) {
+  const [busy, setBusy] = useState("");
+  const command = async (label: string, value: string) => {
+    setBusy(value);
+    speak(label);
+    try {
+      const result = await post("/appliances/command/", { command: value }) as { status: string };
+      add("Appliance", label, result.status);
+    } catch {
+      add("Appliance", label, "FAILED");
+    } finally {
+      setBusy("");
+    }
+  };
+  return <section className="content-card"><p className="eyebrow">ARDUINO CONTROL</p><h2>Appliances</h2><p className="hint">Commands are allowlisted and show success only after a hardware acknowledgement.</p><div className="choice-grid">{devices.map(device => <button key={device.command} disabled={!!busy} onClick={() => void command(device.label, device.command)}>{busy === device.command ? "Waiting for ACK…" : device.label}</button>)}</div></section>;
+}
+
+function CaregiverWorkspace({ token, patient, patients, setPatient, entries, summary, signOut, onAcknowledge, notice }: { token: string; patient: Patient; patients: Patient[]; setPatient: (patient: Patient) => void; entries: Entry[]; summary: Summary | null; signOut: () => void; onAcknowledge: () => void; notice: string }) {
+  const [filter, setFilter] = useState("ALL");
+  const [notifications, setNotifications] = useState<{ id: number; created_at: string; event: string; channel: string; status: string; provider_id: string }[]>([]);
+  const visible = filter === "ALL" ? entries : entries.filter(entry => entry.kind === filter);
+  useEffect(() => {
+    const loadNotifications = () => request(`/notifications/?patient_id=${patient.id}`, token).then(r => r.ok ? r.json() : []).then(setNotifications).catch(() => {});
+    loadNotifications();
+    const timer = window.setInterval(loadNotifications, 15000);
+    return () => window.clearInterval(timer);
+  }, [token, patient.id]);
+  const exportEvents = async () => {
+    const response = await request(`/events/export/?patient_id=${patient.id}`, token);
+    if (!response.ok) return;
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${patient.name || "patient"}-events.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  return <main className="assist-shell"><header className="assist-header"><div><p className="eyebrow">BLINKASSIST / CAREGIVER PORTAL</p><h1>Assigned patient activity</h1></div><button onClick={signOut}>Sign out</button></header><label className="patient-picker">Patient<select value={patient.id} onChange={e => setPatient(patients.find(p => p.id === Number(e.target.value))!)}>{patients.map(p => <option key={p.id} value={p.id}>{p.name} · Room {p.room_number}</option>)}</select></label><section className="metric-grid"><Metric label="Status" value={display(summary?.status || "ACTIVE")} detail="Latest recorded state" /><Metric label="Emergency events" value={String(summary?.counts.emergency || 0)} detail="Review and acknowledge" /><Metric label="Notifications" value={summary?.system.notifications || "STANDBY"} detail="Telegram alert delivery status" /></section>{notice && <p className="error-text">{notice}</p>}<section className="content-card"><p className="eyebrow">NOTIFICATION INBOX</p><h2>Delivery status</h2>{notifications.length ? <div className="table"><div className="row head"><span>Time</span><span>Channel</span><span>Alert</span><span>Status</span></div>{notifications.map(item => <div className="row" key={item.id}><span>{new Date(item.created_at).toLocaleTimeString()}</span><span>{item.channel}</span><span>{item.event}{item.status === "FAILED" && item.provider_id ? ` — ${item.provider_id}` : ""}</span><span>{item.status}</span></div>)}</div> : <p className="empty-state">No notifications for this patient yet.</p>}</section><section className="content-card"><div className="section-heading"><div><p className="eyebrow">READ-ONLY PATIENT RECORD</p><h2>{patient.name}</h2></div><div><button onClick={() => void exportEvents()}>Export CSV</button><button className="danger" onClick={onAcknowledge}>Acknowledge emergency</button></div></div><label>Filter activity<select value={filter} onChange={e => setFilter(e.target.value)}><option>ALL</option><option>EMERGENCY</option><option>COMMUNICATION</option><option>APPLIANCE</option><option>WELLNESS</option></select></label><History entries={visible} /></section></main>;
+}
+
+function Safety({ state, change, wellness, emergency }: { state: State; change: (s: State) => void; wellness: () => void; emergency: () => void }) {
+  return <section className="content-card"><p className="eyebrow">SAFETY STATE MACHINE</p><h2>Safety monitoring</h2><p className="hint">This assists activity monitoring and caregiver escalation; it does not diagnose medical conditions.</p><div className="safety-grid">{(["ACTIVE", "IDLE", "SLEEP_CANDIDATE", "FACE_LOST", "WELLNESS_CHECK_PENDING", "UNRESPONSIVE", "EMERGENCY"] as State[]).map(s => <button key={s} className={state === s ? "selected-state" : ""} onClick={() => void change(s)}>{display(s)}</button>)}</div><div className="gesture-controls"><button onClick={wellness}>Start wellness check</button><button className="danger" onClick={emergency}>Trigger emergency countdown</button></div></section>;
+}
+
+function Metrics({ summary }: { summary: Summary | null }) {
+  return <section className="content-card"><p className="eyebrow">DETECTION METRICS</p><h2>Quality & performance</h2><div className="metric-grid"><Metric label="Accuracy" value="—" detail="Requires labelled dataset" /><Metric label="Precision" value="—" detail="Requires labelled dataset" /><Metric label="Recall" value="—" detail="Requires labelled dataset" /><Metric label="F1 score" value="—" detail="Requires labelled dataset" /><Metric label="Detection rate" value={String((summary?.counts.single || 0) + (summary?.counts.double || 0))} detail="Recorded blink events" /><Metric label="False positive rate" value="—" detail="Available after review" /></div><p className="hint">Metrics are intentionally not fabricated. Record labelled sessions before using them for performance review.</p></section>;
+}
+
+function Settings() {
+  const [dark, setDark] = useState(true);
+  return <section className="content-card"><p className="eyebrow">PREFERENCES</p><h2>Workspace settings</h2><label className="toggle"><input type="checkbox" checked={dark} onChange={e => { setDark(e.target.checked); document.documentElement.dataset.theme = e.target.checked ? "dark" : "light"; }} /> Dark mode</label><p className="hint">Camera access, calibration and event history remain available from their dedicated dashboard areas.</p></section>;
+}
+
+function History({ entries, compact = false }: { entries: Entry[]; compact?: boolean }) {
+  return <div className="table"><div className="row head"><span>Time</span><span>Event</span><span>Details</span><span>Status</span></div>{entries.length ? entries.map(e => <div className="row" key={e.id}><span>{e.time}</span><span>{display(e.kind)}</span><span>{display(e.text)}</span><span>{display(e.status)}</span></div>) : <p className="empty-state">{compact ? "No events yet. Live activity will appear here." : "No matching events yet."}</p>}</div>;
+}
+
+function Calibration() {
+  const [step, setStep] = useState(1);
+  return <section className="content-card"><p className="eyebrow">ADAPTIVE THRESHOLD</p><h2>Calibration wizard</h2><div className="progress"><i style={{ width: `${step / 3 * 100}%` }} /></div><h3>Step {step}: {["Keep eyes open", "Blink naturally", "Calibration complete"][step - 1]}</h3><p className="hint">The existing detector keeps the stable EAR baseline and adaptive threshold calculation intact.</p><button onClick={() => setStep(Math.min(3, step + 1))}>{step === 3 ? "Save calibration" : "Continue"}</button></section>;
+}
+
+function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <article className="metric-card"><small>{label}</small><strong>{value}</strong><span>{detail}</span></article>;
+}
+
+function SystemCard({ title, value }: { title: string; value: string }) {
+  return <article className="system-card"><small>{title}</small><b>{display(value)}</b></article>;
+}
+
+function Signal({ ear, threshold }: { ear?: number | null; threshold?: number | null }) {
+  const [samples, setSamples] = useState<number[]>([]);
+  useEffect(() => { if (ear != null) setSamples(previous => [...previous.slice(-79), ear]); }, [ear]);
+  const points = samples.map((sample, index) => `${(index / Math.max(samples.length - 1, 1)) * 100},${100 - Math.min(100, Math.max(0, sample * 300))}`).join(" ");
+  const thresholdY = 100 - Math.min(100, Math.max(0, (threshold || 0.21) * 300));
+  return <div className="signal ear-history" role="img" aria-label="Rolling Eye Aspect Ratio graph"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="0" x2="100" y1={thresholdY} y2={thresholdY} className="threshold-line" /><polyline points={points} className="ear-line" /></svg><b>threshold {threshold?.toFixed(3) || "—"}</b><span>{samples.length ? "Live rolling EAR history" : "Start the camera to begin the EAR graph"}</span></div>;
+}
+
 function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return false;
   const synthesis = window.speechSynthesis;
@@ -273,7 +352,6 @@ function TelegramConnect({ token }: { token: string }) {
   const [link, setLink] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
   const refresh = async (showResult = false) => {
     try {
       const response = await request("/caregiver/telegram/", token);
@@ -292,14 +370,12 @@ function TelegramConnect({ token }: { token: string }) {
       setMessage(error instanceof Error ? error.message : "Telegram connection status could not be loaded.");
     }
   };
-
   useEffect(() => {
     void refresh();
     const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [token]);
-
   const createLink = async () => {
     setBusy(true);
     setMessage("");
@@ -315,22 +391,172 @@ function TelegramConnect({ token }: { token: string }) {
       setBusy(false);
     }
   };
+  return <section className="assist-shell telegram-connect-shell"><section className="content-card"><p className="eyebrow">CAREGIVER ALERTS</p><h2>Telegram notifications</h2>{connected ? <p role="status">Telegram is connected. Safety alerts can be sent to your Telegram chat.</p> : <><p className="hint">Connect Telegram to receive emergency, Sleep Mode, camera-loss, and “Call Caregiver” alerts. Routine activity is not sent.</p>{!configured && <p className="error-text" role="alert">Telegram bot token and username are not configured on the server yet.</p>}{!link ? <button type="button" disabled={busy || !configured} onClick={() => void createLink()}>{busy ? "Creating link…" : "Connect Telegram"}</button> : <p><a className="telegram-link-button" href={link} target="_blank" rel="noreferrer">Open Telegram and press Start</a><button type="button" onClick={() => void refresh(true)}>I pressed Start · Check status</button></p>}<p className="hint">The Telegram poller must be running on the BlinkAssist server to complete linking.</p></>}{message && <p className="error-text" role="alert">{message}</p>}{connected && <button type="button" onClick={() => void refresh(true)}>Refresh connection status</button>}</section></section>;
+}
 
-  return <section className="assist-shell telegram-connect-shell">
-    <section className="content-card">
-      <p className="eyebrow">CAREGIVER ALERTS</p>
-      <h2>Telegram notifications</h2>
-      {connected ? <p role="status">Telegram is connected. Safety alerts can be sent to your Telegram chat.</p> : <>
-        <p className="hint">Connect Telegram to receive emergency, Sleep Mode, camera-loss, and “Call Caregiver” alerts. Routine activity is not sent.</p>
-        {!configured && <p className="error-text" role="alert">Telegram bot token and username are not configured on the server yet.</p>}
-        {!link ? <button type="button" disabled={busy || !configured} onClick={() => void createLink()}>{busy ? "Creating link…" : "Connect Telegram"}</button> : <p>
-          <a className="telegram-link-button" href={link} target="_blank" rel="noreferrer">Open Telegram and press Start</a>
-          <button type="button" onClick={() => void refresh(true)}>I pressed Start · Check status</button>
-        </p>}
-        <p className="hint">The Telegram poller must be running on the BlinkAssist server to complete linking.</p>
-      </>}
-      {message && <p className="error-text" role="alert">{message}</p>}
-      {connected && <button type="button" onClick={() => void refresh(true)}>Refresh connection status</button>}
-    </section>
+function EyeDiagram({ left, right, active }: { left?: number | null; right?: number | null; active: boolean }) { return <svg className="eye-diagram" viewBox="0 0 260 88" role="img" aria-label="Stylised eye landmark visualization"><path d="M12 44 Q65 5 118 44 Q65 83 12 44Z" /><path d="M142 44 Q195 5 248 44 Q195 83 142 44Z" /><circle cx="65" cy="44" r="12" /><circle cx="195" cy="44" r="12" />{[36, 50, 65, 80, 94].map((x, i) => <circle key={i} cx={x} cy={44 + (i % 2 ? -16 : 16)} r="2.5" />)}{[166, 180, 195, 210, 224].map((x, i) => <circle key={i} cx={x} cy={44 + (i % 2 ? -16 : 16)} r="2.5" />)}<text x="65" y="82">L {left?.toFixed(3) ?? "—"}</text><text x="195" y="82">R {right?.toFixed(3) ?? "—"}</text><text x="130" y="15">{active ? "FACE MESH ACTIVE" : "WAITING FOR FACE"}</text></svg>; }
+function EventLog({ entries, latest }: { entries: Entry[]; latest?: DetectResponse["event"] }) { const live = latest ? [{ id: -1, time: new Date().toLocaleTimeString(), kind: latest.type, text: `${latest.duration_ms}ms blink`, status: "LIVE" }] : []; const items = [...live, ...entries].slice(0, 9); return <div className="event-log-list">{items.length ? items.map(item => <div className="event-log-row" key={item.id}><time>{item.time}</time><b className={item.kind.toLowerCase()}>{display(item.kind)}</b><span>{display(item.text)}</span></div>) : <p className="empty-state">Camera detections and command activity will appear here.</p>}</div>; }
+function LiveCamera({ token: _token, onBlink, onTelemetry }: { token: string; onBlink: (kind: "single" | "double" | "triple" | "long" | "sustained") => void; onTelemetry: (data: DetectResponse) => void }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const captureCanvas = useRef<HTMLCanvasElement | null>(null);
+  const timer = useRef<number>();
+  const stream = useRef<MediaStream>();
+  const request = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const callback = useRef(onBlink);
+  const [active, setActive] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+  const [stats, setStats] = useState<DetectResponse | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [frameSize, setFrameSize] = useState({ width: 640, height: 480 });
+
+  useEffect(() => { callback.current = onBlink; }, [onBlink]);
+  useEffect(() => () => {
+    generation.current += 1;
+    request.current?.abort();
+    if (timer.current) clearTimeout(timer.current);
+    stream.current?.getTracks().forEach(track => track.stop());
+  }, []);
+
+  async function start() {
+    if (active || starting) return;
+    const session = ++generation.current;
+    setStarting(true);
+    setError("");
+    try {
+      const media = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480, facingMode: "user" },
+        audio: false,
+      });
+      if (generation.current !== session) {
+        media.getTracks().forEach(track => track.stop());
+        return;
+      }
+      stream.current = media;
+      const element = video.current;
+      const display = canvas.current;
+      const capture = captureCanvas.current ?? document.createElement("canvas");
+      captureCanvas.current = capture;
+      if (!element || !display) throw new Error("Camera display is unavailable.");
+      element.srcObject = media;
+      await element.play();
+      if (generation.current !== session) return;
+      const width = element.videoWidth;
+      const height = element.videoHeight;
+      if (!width || !height) throw new Error("The camera did not provide a usable video frame.");
+      capture.width = width;
+      capture.height = height;
+      display.width = width;
+      display.height = height;
+      setFrameSize({ width, height });
+      setActive(true);
+      void loop(session);
+    } catch (e) {
+      if (generation.current === session) {
+        stream.current?.getTracks().forEach(track => track.stop());
+        stream.current = undefined;
+        setError(e instanceof Error ? e.message : "Camera permission was denied.");
+      }
+    } finally {
+      if (generation.current === session) setStarting(false);
+    }
+  }
+
+  function stop() {
+    generation.current += 1;
+    request.current?.abort();
+    request.current = null;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = undefined;
+    stream.current?.getTracks().forEach(track => track.stop());
+    stream.current = undefined;
+    if (video.current) video.current.srcObject = null;
+    setActive(false);
+    setStarting(false);
+    setConnected(false);
+    setStats(null);
+  }
+
+  async function loop(session: number) {
+    const element = video.current;
+    const display = canvas.current;
+    const capture = captureCanvas.current;
+    const captureContext = capture?.getContext("2d");
+    if (generation.current !== session || !element || !display || !capture || !captureContext || !stream.current) return;
+
+    if (element.readyState >= 2 && element.videoWidth > 0 && element.videoHeight > 0) {
+      const width = element.videoWidth;
+      const height = element.videoHeight;
+      if (capture.width !== width || capture.height !== height) {
+        capture.width = width;
+        capture.height = height;
+        display.width = width;
+        display.height = height;
+        setFrameSize({ width, height });
+      }
+      captureContext.drawImage(element, 0, 0, width, height);
+      const image = capture.toDataURL("image/jpeg", 0.65);
+      const controller = new AbortController();
+      request.current = controller;
+      try {
+        const response = await fetch(`${API}/detect/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image }),
+          signal: controller.signal,
+        });
+        const data: DetectResponse = await response.json();
+        if (!response.ok) throw Error("Detector unavailable");
+        if (generation.current !== session || stream.current === undefined) return;
+
+        const displayContext = display.getContext("2d");
+        if (!displayContext) throw Error("Camera display is unavailable.");
+        displayContext.clearRect(0, 0, width, height);
+        const points = [...(data.eye_landmarks?.left || []), ...(data.eye_landmarks?.right || [])];
+        if (data.face && points.length) {
+          const radius = Math.max(3, width / 200);
+          for (const point of points) {
+            displayContext.beginPath();
+            displayContext.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            displayContext.fillStyle = "#00e5ff";
+            displayContext.fill();
+            displayContext.lineWidth = Math.max(1.5, width / 400);
+            displayContext.strokeStyle = "#ffffff";
+            displayContext.stroke();
+          }
+        }
+        setStats(data);
+        onTelemetry(data);
+        setConnected(true);
+        if (data.event) callback.current(data.event.type);
+      } catch (e) {
+        if (generation.current === session && !(e instanceof DOMException && e.name === "AbortError")) setConnected(false);
+      } finally {
+        if (request.current === controller) request.current = null;
+      }
+    }
+
+    if (generation.current === session && stream.current) {
+      timer.current = window.setTimeout(() => void loop(session), 125);
+    }
+  }
+
+  return <section className="live-camera console-panel">
+    <div className="camera-title">
+      <div><p className="eyebrow">LIVE CAMERA</p><h3>Face & eye landmarks</h3></div>
+      <b className={connected ? "camera-good" : "camera-bad"}>{connected ? "LIVE" : active || starting ? "CONNECTING" : "OFFLINE"}</b>
+    </div>
+    <div className="camera-frame" style={{ aspectRatio: `${frameSize.width} / ${frameSize.height}` }}>
+      <video ref={video} muted playsInline className={active ? "visible camera-source" : "camera-source"} />
+      <canvas ref={canvas} className="camera-display" />
+      <div className="camera-placeholder">{active ? (stats?.face ? "Face detected · landmarks active" : "Position your face in view") : "Start camera to begin monitoring"}</div>
+    </div>
+    <div className="camera-actions">
+      <button onClick={() => void start()} disabled={active || starting}>{starting ? "Starting camera…" : "Start camera"}</button>
+      <button className="secondary" onClick={stop} disabled={!active && !starting}>Stop</button>
+    </div>
+    {error && <p className="error-text">{error}</p>}
   </section>;
 }
