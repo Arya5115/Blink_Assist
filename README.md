@@ -1,9 +1,3 @@
-git add -A
-git status --short
-git diff --cached --stat
-git commit -m "Remove WebSockets and smooth camera preview"
-git push origin main# BlinkAssist - Django + React
-
 Vision-based assistive communication for ALS / locked-in patients.
 Implements **Objectives 1 & 2** of the review paper.
 
@@ -22,8 +16,7 @@ This project uses a direct local/service deployment; Docker is not included.
 Only explicit caregiver alerts are sent to Telegram: emergency escalation,
 automatic Sleep Mode and camera-loss transitions, and a patient's “Call
 Caregiver” request. Routine blink/activity events remain in BlinkAssist and are
-not forwarded. Telegram is an optional convenience channel, not a guaranteed
-emergency or medical alert service.
+not forwarded. Telegram is the main stream alert service as of now, websockets can be integrated for more reliable communication.
 
 1. Create a bot with Telegram's [@BotFather](https://t.me/BotFather) and copy
 	its bot token and username.
@@ -31,7 +24,7 @@ emergency or medical alert service.
 	`TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` (without `@`). Do not
 	commit the token.
 3. Apply backend migrations and start Django as usual.
-4. In a second backend terminal, start `python manage.py poll_telegram`.
+4. In a third backend terminal, start `python manage.py poll_telegram`.
 5. Sign in to BlinkAssist as a caregiver, choose **Connect Telegram**, open the
 	generated Telegram link, and press **Start**. Return to BlinkAssist and
 	refresh the connection status.
@@ -56,5 +49,9 @@ cd frontend
 npm install
 npm run dev
 # open http://localhost:5173
+
+# Terminal 3 - backend
+cd backend
+python manage.py poll_telegram
 ```
 # Blink_Assist
