@@ -1,4 +1,4 @@
-## Vision-based assistive communication for ALS / locked-in patients.
+# Vision-based assistive communication for ALS / locked-in patients.
 Implements **Objectives 1 & 2** of the review paper.
 
 ```
@@ -11,7 +11,7 @@ See `docs/PROJECT_REPORT.md` for the original detector implementation and
 assistive communication, safety, API, Arduino, and production plan.
 This project uses a direct local/service deployment; Docker is not included.
 
-# Telegram caregiver alerts
+## Telegram caregiver alerts
 
 Only explicit caregiver alerts are sent to Telegram: emergency escalation,
 automatic Sleep Mode and camera-loss transitions, and a patient's “Call
