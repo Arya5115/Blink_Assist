@@ -1,4 +1,4 @@
-# Vision-based assistive communication for ALS / locked-in patients.
+# Blink_Assist: Vision-based assistive communication for ALS / locked-in patients.
 Implements **Objectives 1 & 2** of the review paper.
 
 ```
@@ -54,4 +54,4 @@ npm run dev
 cd backend
 python manage.py poll_telegram
 ```
-# Blink_Assist
+
