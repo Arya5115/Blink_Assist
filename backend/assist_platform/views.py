@@ -15,6 +15,7 @@ from .serializers import CalibrationSerializer, CaregiverSerializer, Communicati
 from .services import create_event, create_telegram_link, notify_caregivers
 from .permissions import ADMIN, CAREGIVER, PATIENT, require_patient_controller, role_for
 from .serial_gateway import ArduinoGateway
+from .speech import synthesize_speech
 
 
 def _normalized_role(value):
@@ -62,6 +63,23 @@ def caregiver_telegram(request):
     except RuntimeError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     return Response({"url": link}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def speech(request):
+    text = request.data.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return Response({"detail": "Text is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(text) > 500:
+        return Response({"detail": "Text must be 500 characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        audio = synthesize_speech(text.strip())
+    except FileNotFoundError:
+        return Response({"detail": "Piper voice model not found. Set PIPER_MODEL_PATH."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    response = HttpResponse(audio, content_type="audio/wav")
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def patient_for(request):

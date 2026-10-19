@@ -19,6 +19,42 @@ from .services import create_telegram_link, handle_telegram_update, link_telegra
 from .management.commands.poll_telegram import Command as TelegramPollCommand
 
 
+class PiperSpeechTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("speech-patient", password="safe-password-123")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    @patch("assist_platform.views.synthesize_speech", return_value=b"RIFFtest-wav")
+    def test_authenticated_speech_request_returns_wav(self, synthesize):
+        response = self.client.post("/api/speech/", {"text": "Hello"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "audio/wav")
+        self.assertEqual(response.content, b"RIFFtest-wav")
+        synthesize.assert_called_once_with("Hello")
+
+    def test_speech_request_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post("/api/speech/", {"text": "Hello"}, format="json")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_speech_request_rejects_blank_or_oversized_text(self):
+        blank = self.client.post("/api/speech/", {"text": "  "}, format="json")
+        oversized = self.client.post("/api/speech/", {"text": "x" * 501}, format="json")
+
+        self.assertEqual(blank.status_code, 400)
+        self.assertEqual(oversized.status_code, 400)
+
+    @patch("assist_platform.views.synthesize_speech", side_effect=FileNotFoundError)
+    def test_speech_request_reports_missing_voice_model(self, synthesize):
+        response = self.client.post("/api/speech/", {"text": "Hello"}, format="json")
+
+        self.assertEqual(response.status_code, 503)
+
+
 class SafetyAndExportTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("patient", password="safe-password-123")

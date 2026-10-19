@@ -9,3 +9,4 @@ numpy==1.26.4
 Pillow==10.4.0
 djangorestframework-simplejwt==5.3.1
 pyserial==3.5
+piper-tts==1.8.0

@@ -15,6 +15,9 @@ type Summary = { status: State; counts: { single: number; double: number; emerge
 const API = import.meta.env.VITE_API_URL || "/api";
 const messages = ["Need Water", "Need Food", "Need Washroom", "Need Medicine", "Need Help", "Call Caregiver"];
 const devices = [{ label: "Fan On", command: "FAN_ON" }, { label: "Fan Off", command: "FAN_OFF" }, { label: "Light On", command: "LIGHT_ON" }, { label: "Light Off", command: "LIGHT_OFF" }, { label: "Ring Bell", command: "BELL_RING" }];
+let speechAudio: HTMLAudioElement | null = null;
+let speechRequest: AbortController | null = null;
+let speechObjectUrl = "";
 let refreshInFlight: Promise<string | null> | null = null;
 const refreshAccessToken = () => {
   if (refreshInFlight) return refreshInFlight;
@@ -77,7 +80,7 @@ export default function App() {
     }).catch(reason => { setError(reason.message); signOut(); });
   }, [token]);
   const themeSwitch = <div className="theme-controls" aria-label="Accessibility controls">
-    <button className="theme-switch" onClick={() => speak("Voice feedback is enabled.")}>🔊 Test voice</button>
+    {token && <button className="theme-switch" onClick={() => void speak("Voice feedback is enabled.")}>🔊 Test voice</button>}
     <button className="theme-switch" onClick={() => setDark(current => !current)} aria-pressed={dark}>
       {dark ? "☀ Light mode" : "◐ Dark mode"}
     </button>
@@ -161,7 +164,7 @@ function AACWorkspace({ token, patient, entries, summary, state, add, post, onEm
   const select = () => { const option = options[index]; if (!option) return; setLastActivity(Date.now()); if (option.value === "back") return reset(); if (menu === "home") { setAutoScan(false); setMenu(option.value as AACMenu); return; } setPending(option); };
   const confirm = async () => { if (!pending) return; setLastActivity(Date.now()); try { if (pending.value.startsWith("message:")) { const message = pending.value.slice(8); await post("/communications/", { message }); add("Communication", message); announce(message === "Call Caregiver" ? "Your caregiver has been called." : `Your request for ${message.replace(/^Need /i, "").toLowerCase()} has been sent.`); } else if (pending.value.startsWith("device:")) { const result = await post("/appliances/command/", { command: pending.value.slice(7) }) as { status?: string }; if (result.status && result.status !== "SUCCESS") throw Error("The appliance did not confirm the command."); add("Appliance", pending.label); announce(`${pending.label} confirmed.`); } } catch { add("System", `${pending.label} failed`, "FAILED"); announce(`Unable to complete ${pending.label.toLowerCase()}. Please try again.`); } finally { reset(); } };
   const gesture = (kind: "single" | "double" | "triple" | "long" | "sustained") => { setLastActivity(Date.now()); add("Blink", kind.toUpperCase()); void post("/events/", { event_type: "BLINK", action: kind.toUpperCase(), status: "SUCCESS" }).catch(() => {}); if (kind === "sustained") { void startEmergency(); return; } if (wellnessPrompt) { if (kind === "single") { setWellnessChoice(choice => choice === "yes" ? "no" : "yes"); return; } if (kind === "double") { void respondToWellness(wellnessChoice === "yes"); return; } if (kind === "long") { setWellnessChoice("yes"); return; } } if (emergencyPrompt) { if (kind === "single") { setEmergencyChoice(choice => choice === "keep" ? "cancel" : "keep"); return; } if (kind === "double") { if (emergencyChoice === "cancel") void cancelEmergency(); else setEmergencyPrompt(false); return; } if (kind === "long") { setEmergencyChoice("keep"); return; } } if (kind === "long") { pending ? setPending(null) : reset(); return; } if (kind === "single") { if (!autoScan) setIndex(value => (value + 1) % options.length); return; } if (kind === "double") void (pending ? confirm() : select()); };
-  const announce = (text: string) => { setAnnouncement(text); speak(text); };
+  const announce = (text: string) => { setAnnouncement(text); void speak(text); };
   useEffect(() => {
     const host = document.createElement("div");
     host.id = "sleep-mode-root";
@@ -240,7 +243,7 @@ function Communication({ post, add }: { post: (path: string, data: object) => Pr
     const phrase = message === "Call Caregiver" ? "Calling caregiver" : `I need ${message.slice(5).toLowerCase()}`;
     setSelected(message);
     setSpeaking(phrase);
-    speak(phrase);
+    void speak(phrase);
     try {
       await post("/communications/", { message });
       add("Communication", message);
@@ -248,14 +251,14 @@ function Communication({ post, add }: { post: (path: string, data: object) => Pr
       window.setTimeout(() => setSelected(null), 3000);
     }
   };
-  return <section className="content-card"><p className="eyebrow">COMMUNICATION BOARD</p><h2>Choose a need</h2><p className="hint">Single blink moves focus; double blink confirms; long blink returns.</p><div className="choice-grid">{messages.map(message => <button key={message} className={selected === message ? "focused" : ""} onClick={() => void send(message)}>{message}</button>)}</div><section className="speaking-bar"><span className={speaking ? "speaking-dot" : ""}>Speaking now: <b>{speaking || "No active message"}</b></span><div><button onClick={() => speechSynthesis.pause()}>Pause</button><button onClick={() => speechSynthesis.resume()}>Resume</button><button onClick={() => { speechSynthesis.cancel(); setSpeaking(""); }}>Stop</button></div></section></section>;
+  return <section className="content-card"><p className="eyebrow">COMMUNICATION BOARD</p><h2>Choose a need</h2><p className="hint">Single blink moves focus; double blink confirms; long blink returns.</p><div className="choice-grid">{messages.map(message => <button key={message} className={selected === message ? "focused" : ""} onClick={() => void send(message)}>{message}</button>)}</div><section className="speaking-bar"><span className={speaking ? "speaking-dot" : ""}>Speaking now: <b>{speaking || "No active message"}</b></span><div><button onClick={pauseSpeech}>Pause</button><button onClick={resumeSpeech}>Resume</button><button onClick={() => { stopSpeech(); setSpeaking(""); }}>Stop</button></div></section></section>;
 }
 
 function Appliances({ post, add }: { post: (path: string, data: object) => Promise<unknown>; add: (kind: string, text: string, status?: string) => void }) {
   const [busy, setBusy] = useState("");
   const command = async (label: string, value: string) => {
     setBusy(value);
-    speak(label);
+    void speak(label);
     try {
       const result = await post("/appliances/command/", { command: value }) as { status: string };
       add("Appliance", label, result.status);
@@ -329,21 +332,66 @@ function Signal({ ear, threshold }: { ear?: number | null; threshold?: number | 
   return <div className="signal ear-history" role="img" aria-label="Rolling Eye Aspect Ratio graph"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="0" x2="100" y1={thresholdY} y2={thresholdY} className="threshold-line" /><polyline points={points} className="ear-line" /></svg><b>threshold {threshold?.toFixed(3) || "—"}</b><span>{samples.length ? "Live rolling EAR history" : "Start the camera to begin the EAR graph"}</span></div>;
 }
 
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return false;
-  const synthesis = window.speechSynthesis;
-  synthesis.cancel();
-  synthesis.resume();
-  const utterance = new SpeechSynthesisUtterance(text);
-  const preferredVoice = synthesis.getVoices().find(voice => voice.lang.toLowerCase().startsWith("en"));
-  if (preferredVoice) utterance.voice = preferredVoice;
-  const configuredRate = Number(localStorage.getItem("blinkassist_voice_rate") || 1);
-  utterance.rate = Number.isFinite(configuredRate) ? Math.min(1.2, Math.max(0.8, configuredRate)) : 1;
-  utterance.volume = 1;
-  utterance.pitch = 1;
-  synthesis.speak(utterance);
-  synthesis.resume();
-  return true;
+function stopSpeech() {
+  speechRequest?.abort();
+  speechRequest = null;
+  speechAudio?.pause();
+  speechAudio = null;
+  if (speechObjectUrl) {
+    URL.revokeObjectURL(speechObjectUrl);
+    speechObjectUrl = "";
+  }
+}
+
+function pauseSpeech() {
+  speechAudio?.pause();
+}
+
+function resumeSpeech() {
+  void speechAudio?.play().catch(() => {});
+}
+
+async function speak(text: string): Promise<boolean> {
+  if (typeof window === "undefined" || !text.trim()) return false;
+  const token = localStorage.getItem("blinkassist_token");
+  if (!token) return false;
+
+  stopSpeech();
+  const controller = new AbortController();
+  speechRequest = controller;
+  try {
+    const response = await request("/speech/", token, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error("Piper speech synthesis failed.");
+    const audioUrl = URL.createObjectURL(await response.blob());
+    if (speechRequest !== controller) {
+      URL.revokeObjectURL(audioUrl);
+      return false;
+    }
+
+    speechObjectUrl = audioUrl;
+    const audio = new Audio(audioUrl);
+    speechAudio = audio;
+    const releaseAudio = () => {
+      if (speechAudio !== audio) return;
+      speechAudio = null;
+      if (speechObjectUrl === audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        speechObjectUrl = "";
+      }
+      if (speechRequest === controller) speechRequest = null;
+    };
+    audio.addEventListener("ended", releaseAudio, { once: true });
+    audio.addEventListener("error", releaseAudio, { once: true });
+    await audio.play();
+    return true;
+  } catch {
+    if (speechRequest === controller) stopSpeech();
+    return false;
+  }
 }
 
 function TelegramConnect({ token }: { token: string }) {
