@@ -42,6 +42,8 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python manage.py migrate
+export ARDUINO_PORT=/dev/ttyUSB0
+export ARDUINO_BUADRATE=115200
 python manage.py runserver 0.0.0.0:8000
 
 # Terminal 2 - frontend
