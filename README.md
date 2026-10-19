@@ -1,22 +1,18 @@
 # Blink_Assist: Vision-based assistive communication for ALS / locked-in patients.
-Implements **Objectives 1 & 2** of the review paper.
 
 ```
 backend/   Django 4 + DRF + OpenCV + MediaPipe
 frontend/  React 18 + Vite + TypeScript
 ```
 
-See `docs/PROJECT_REPORT.md` for the original detector implementation and
-[`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md) for the
-assistive communication, safety, API, Arduino, and production plan.
 This project uses a direct local/service deployment; Docker is not included.
 
 ## Telegram caregiver alerts
-
+### Disclaimer: Creation of telegram bot is free of cost!
 Only explicit caregiver alerts are sent to Telegram: emergency escalation,
 automatic Sleep Mode and camera-loss transitions, and a patient's “Call
 Caregiver” request. Routine blink/activity events remain in BlinkAssist and are
-not forwarded. Telegram is the main stream alert service as of now, websockets can be integrated for more reliable communication.
+not forwarded. Telegram is the main stream alert service as of now, websockets or whatsapp chat bot can be integrated for much more reliable communication.
 
 1. Create a bot with Telegram's [@BotFather](https://t.me/BotFather) and copy
 	its bot token and username.
