@@ -29,6 +29,22 @@ Caregivers must have Telegram installed, start the bot, and enable Telegram
 notifications. The polling command must remain running for Telegram account
 linking; alert delivery itself uses Telegram's Bot API from Django.
 
+## Local Piper speech
+The backend uses Piper for local voice feedback. Install the pinned package from
+`backend/requirements.txt`, then download the English voice into a user data
+directory (not the repository):
+
+```bash
+cd backend
+python -m piper.download_voices en_US-lessac-medium --data-dir "$HOME/.local/share/blinkassist/voices"
+```
+
+The backend defaults to
+`~/.local/share/blinkassist/voices/en_US-lessac-medium.onnx`. Set
+`PIPER_MODEL_PATH` in `backend/.env` to use a different model file. Voice files
+are not tracked by Git; review the voice model's dataset license before
+redistributing it.
+
 ## Quick start
 
 ```powershell
