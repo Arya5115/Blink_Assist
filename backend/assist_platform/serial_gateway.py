@@ -4,7 +4,7 @@ import threading
 
 
 class ArduinoGateway:
-    ALLOWED = {"BUZZER_ON", "BUZZER_OFF", "FAN_ON", "FAN_OFF", "LIGHT_ON", "LIGHT_OFF", "BELL_RING"}
+    ALLOWED = {"LIGHT_ON", "LIGHT_OFF"}
 
     def __init__(self):
         self._lock = threading.Lock()
